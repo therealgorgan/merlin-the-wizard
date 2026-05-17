@@ -1,0 +1,387 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.balloon {
+  position: relative;
+  margin: 14px;
+  width: calc(100% - 28px);
+  height: calc(100% - 28px);
+  background: #fffadc;
+  border: 1.5px solid #2b2b2b;
+  border-radius: 16px;
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.45);
+  padding: 18px 24px;
+  box-sizing: border-box;
+  animation: pop-in 180ms ease-out;
+  display: flex;
+  flex-direction: column;
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+.balloon:active {
+  cursor: grabbing;
+}
+
+.close-btn {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  font-size: 19px;
+  line-height: 1;
+  color: #555;
+  cursor: pointer;
+  border-radius: 6px;
+  -webkit-app-region: no-drag;
+  z-index: 2;
+}
+.close-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #000;
+}
+
+.balloon-body {
+  color: #1a1a1a;
+  font-size: 14px;
+  line-height: 1.55;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Reserve room at top-right so text doesn't run under the close button. */
+  padding-right: 22px;
+}
+
+#text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  flex: 1;
+  overflow-y: auto;
+  /* Critical: opt out of the parent's drag region so wheel/scrollbar events
+     reach this element. Without this, the OS treats #text as draggable
+     ("title bar") and swallows wheel + arrow-button presses. */
+  -webkit-app-region: no-drag;
+  user-select: text;
+  -webkit-user-select: text;
+  /* Tighter padding-right since the visible scrollbar lives here. */
+  padding-right: 4px;
+}
+
+#text::-webkit-scrollbar {
+  width: 9px;
+}
+#text::-webkit-scrollbar-track {
+  background: rgba(43, 43, 43, 0.06);
+  border-radius: 4px;
+}
+#text::-webkit-scrollbar-thumb {
+  background: rgba(43, 43, 43, 0.32);
+  border-radius: 4px;
+  border: 1px solid #fffadc;
+}
+#text::-webkit-scrollbar-thumb:hover {
+  background: rgba(43, 43, 43, 0.55);
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  -webkit-app-region: no-drag;
+}
+.suggestions[hidden] {
+  display: none;
+}
+.suggestion-chip {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  background: #fff;
+  color: #1a1a1a;
+  border: 1.5px solid #2b2b2b;
+  border-radius: 12px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+.suggestion-chip:hover {
+  background: #f3e9b8;
+}
+.suggestion-chip:active {
+  background: #e7d896;
+}
+
+.attachments-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  -webkit-app-region: no-drag;
+}
+.attachments-strip[hidden] { display: none; }
+.attachment-chip {
+  font-size: 11px;
+  background: #ece2a8;
+  border: 1px solid #2b2b2b;
+  border-radius: 10px;
+  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.attachment-chip button {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  line-height: 1;
+  color: #555;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 2px;
+}
+.attachment-chip.error {
+  background: #f4c5b8;
+  color: #5d1d10;
+  border-color: #5d1d10;
+}
+.attachment-chip.screenshot {
+  background: #c7dcf2;
+  border-color: #2d4d75;
+  color: #1a2840;
+}
+
+/* Drag-and-drop visual feedback */
+body.drop-target .balloon {
+  outline: 3px dashed #5a83d1;
+  outline-offset: -8px;
+  background: #fffce6;
+}
+body.drop-target .balloon::before {
+  content: '📎 Drop to attach';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #5a83d1;
+  background: rgba(255, 250, 220, 0.85);
+  border-radius: 16px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.mic-btn {
+  background: transparent;
+  border: 1.5px solid #2b2b2b;
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 100ms, color 100ms;
+}
+.mic-btn.recording {
+  background: #d77b6b;
+  color: white;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Body styles applied to markdown-rendered text */
+#text h1, #text h2, #text h3 {
+  margin: 6px 0 4px 0;
+  font-weight: 700;
+  font-size: 14px;
+}
+#text p { margin: 4px 0; }
+#text ul, #text ol { margin: 4px 0; padding-left: 18px; }
+#text li { margin: 2px 0; }
+#text code {
+  background: rgba(43,43,43,0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 12px;
+}
+#text pre {
+  background: #2b2b2b;
+  color: #f3e9b8;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+#text pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+#text a { color: #5a83d1; }
+#text strong { font-weight: 700; }
+#text em { font-style: italic; }
+
+.ask-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  -webkit-app-region: no-drag;
+}
+.ask-row[hidden] {
+  display: none;
+}
+
+.ask-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1.5px solid #2b2b2b;
+  border-radius: 8px;
+  background: #fff;
+  color: #1a1a1a;
+  font-size: 13px;
+  font-family: inherit;
+  -webkit-app-region: no-drag;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ask-row input:focus {
+  outline: 2px solid #5a83d1;
+  outline-offset: -1px;
+}
+
+.ask-row button {
+  padding: 8px 16px;
+  background: #2b2b2b;
+  color: #fffadc;
+  border: 1.5px solid #2b2b2b;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  -webkit-app-region: no-drag;
+}
+.ask-row button:hover {
+  background: #444;
+}
+
+/* --- Tail directions --- */
+
+/* Default RIGHT: Merlin to our right. Centered vertically on bubble side. */
+.balloon-tail {
+  position: absolute;
+  right: -18px;
+  top: 50%;
+  margin-top: -10px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-left: 20px solid #2b2b2b;
+}
+.balloon-tail::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  top: -8px;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 16px solid #fffadc;
+}
+
+/* LEFT */
+body[data-tail='left'] .balloon-tail {
+  right: auto;
+  left: -18px;
+  top: 50%;
+  margin-top: -10px;
+  border-left: none;
+  border-right: 20px solid #2b2b2b;
+}
+body[data-tail='left'] .balloon-tail::after {
+  right: auto;
+  left: 4px;
+  top: -8px;
+  border-left: none;
+  border-right: 16px solid #fffadc;
+}
+
+/* TOP */
+body[data-tail='top'] .balloon-tail {
+  right: auto;
+  top: -18px;
+  left: 50%;
+  margin-top: 0;
+  margin-left: -10px;
+  border-top: none;
+  border-bottom: 20px solid #2b2b2b;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+}
+body[data-tail='top'] .balloon-tail::after {
+  right: auto;
+  top: 4px;
+  left: -8px;
+  border-top: none;
+  border-bottom: 16px solid #fffadc;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+}
+
+/* BOTTOM */
+body[data-tail='bottom'] .balloon-tail {
+  right: auto;
+  top: auto;
+  bottom: -18px;
+  left: 50%;
+  margin-top: 0;
+  margin-left: -10px;
+  border-top: 20px solid #2b2b2b;
+  border-bottom: none;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+}
+body[data-tail='bottom'] .balloon-tail::after {
+  right: auto;
+  bottom: 4px;
+  top: auto;
+  left: -8px;
+  border-top: 16px solid #fffadc;
+  border-bottom: none;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+}
+
+@keyframes pop-in {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

@@ -1,0 +1,28 @@
+appId: com.merlinthewizard.app
+productName: Merlin the Wizard
+copyright: ""
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+  - resources/**/*
+  - package.json
+asar: true
+asarUnpack:
+  - resources/models/**
+  - node_modules/@xenova/**
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: resources/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+publish: null

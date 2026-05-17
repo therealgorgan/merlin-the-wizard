@@ -1,0 +1,72 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #1a1a1f;
+  color: #e8e8ec;
+  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  height: 100%;
+}
+
+header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #2c2c34;
+  background: #15151a;
+}
+
+header h1 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+main {
+  padding: 12px 16px;
+}
+
+#filter {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  background: #25252c;
+  color: #e8e8ec;
+  border: 1px solid #3a3a44;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+#animation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+button {
+  background: #2a2a32;
+  color: #e8e8ec;
+  border: 1px solid #3a3a44;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+button:hover {
+  background: #34343e;
+}
+
+button:active {
+  background: #1f1f26;
+}
+
+button.hidden {
+  display: none;
+}

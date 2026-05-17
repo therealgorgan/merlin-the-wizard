@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"
+    />
+    <title>Merlin — Debug Panel</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Merlin Debug</h1>
+      <div class="row">
+        <button id="btn-show">Show</button>
+        <button id="btn-hide">Hide</button>
+      </div>
+    </header>
+    <main>
+      <input id="filter" type="search" placeholder="Filter animations..." />
+      <div id="animation-grid"></div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

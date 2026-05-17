@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self';"
+    />
+    <title>Merlin — History</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Conversation History</h1>
+      <div class="row">
+        <input id="filter" type="search" placeholder="Filter messages..." />
+        <span id="count" class="count"></span>
+      </div>
+    </header>
+    <main id="messages">
+      <p class="empty">Loading…</p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

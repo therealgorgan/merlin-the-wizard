@@ -1,0 +1,94 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#merlin-host {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+}
+
+#merlin-host:active,
+body.merlin-dragging,
+body.merlin-dragging * {
+  cursor: grabbing !important;
+}
+
+/* clippyjs injects elements at the body level with class .clippy.
+   We override its positioning so it sits within our small window.
+   No -webkit-app-region:drag here — that suppresses contextmenu / dblclick
+   on Windows (right-click becomes the OS title-bar menu). Drag is implemented
+   manually via pointer events in main.ts. */
+body > .clippy {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) scale(var(--merlin-zoom, 1)) rotate(0deg);
+  transform-origin: center center;
+  transition: transform 120ms ease-out, filter 120ms ease-out;
+  will-change: transform, filter;
+}
+
+/* Classic appearance (default) — keep the retro pixelated look. */
+body[data-appearance='classic'] > .clippy,
+body:not([data-appearance]) > .clippy {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+}
+body[data-appearance='classic'] > .clippy *,
+body:not([data-appearance]) > .clippy * {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+}
+
+/* Retouched appearance — let the browser smooth-upscale the sprite, then
+   apply a subtle filter chain to firm up edges + give a soft drop-shadow
+   so Merlin reads as "rendered" rather than "blurred pixel art." */
+body[data-appearance='retouched'] > .clippy {
+  image-rendering: auto;
+  image-rendering: high-quality;
+  filter:
+    contrast(1.06)
+    saturate(1.05)
+    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+}
+body[data-appearance='retouched'] > .clippy * {
+  image-rendering: auto;
+  image-rendering: high-quality;
+}
+
+/* While the user is actively dragging Merlin, give him a visible "lifted"
+   state — slight scale-up + drop-shadow + tilt in the drag direction. These
+   are GPU-composited CSS transforms, so they render even while Electron's
+   rapid setPosition starves the renderer of paint cycles for the clippyjs
+   sprite-frame animation. This is the user-visible drag feedback. */
+body.merlin-dragging > .clippy {
+  transform: translate(-50%, -50%) scale(calc(var(--merlin-zoom, 1) * 1.08)) rotate(-4deg);
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55));
+}
+body[data-appearance='retouched'].merlin-dragging > .clippy {
+  filter:
+    contrast(1.06)
+    saturate(1.05)
+    drop-shadow(0 8px 14px rgba(0, 0, 0, 0.55));
+}
+
+/* The sprite map is a CSS background-image on the clippy element's children.
+   Inherit pixelated rendering so upscale stays crisp. */
+body > .clippy * {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+}
+
+body > .clippy-balloon {
+  /* clippyjs provides a balloon, but we use our own speech-bubble window. */
+  display: none !important;
+}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; media-src 'self' blob:;"
+    />
+    <title>Merlin — Bubble</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body data-tail="right">
+    <div class="balloon" id="balloon">
+      <div class="balloon-body">
+        <div id="text"></div>
+        <div class="suggestions" id="suggestions" hidden></div>
+        <div class="attachments-strip" id="attachments-strip" hidden></div>
+        <div class="ask-row" id="ask-row" hidden>
+          <button
+            id="mic-btn"
+            type="button"
+            class="mic-btn"
+            title="Hold to record voice (Whisper)"
+            aria-label="Voice input"
+          >
+            🎙
+          </button>
+          <button
+            id="screen-btn"
+            type="button"
+            class="mic-btn"
+            title="Capture screen and attach (Ctrl+Shift+S)"
+            aria-label="Capture screen"
+          >
+            📷
+          </button>
+          <input
+            id="ask-input"
+            type="text"
+            placeholder="Ask Merlin..."
+            autocomplete="off"
+            spellcheck="true"
+          />
+          <button id="ask-submit" type="button" title="Send (Enter)">Ask</button>
+        </div>
+      </div>
+      <button class="close-btn" id="close-btn" type="button" title="Dismiss (Esc)">×</button>
+      <div class="balloon-tail" aria-hidden="true"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

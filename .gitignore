@@ -1,0 +1,23 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+.env
+.env.local
+.env.*.local
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.vite-temp/
+*.tsbuildinfo
+coverage/
+resources/models/
+
+# User-data folders Electron may create during dev
+userData/
+
+# OS-level / editor swap
+*.swp
+*~

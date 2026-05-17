@@ -1,0 +1,423 @@
+import { ipcMain, shell } from 'electron';
+import { IPC } from '@shared/ipc-contract';
+import { type AnimationName, isAnimationName } from '@shared/animations';
+import {
+  createSpriteWindow,
+  getSpriteWindow,
+  hideSprite,
+  moveSpriteBy,
+  setZoom,
+  showSprite,
+  zoomBy,
+} from '../windows/spriteWindow';
+import { hideBubble } from '../windows/bubbleWindow';
+import { closeSettingsWindow, openSettingsWindow } from '../windows/settingsWindow';
+import { buildMerlinMenu } from '../contextMenu';
+import { openAskBubble, handleUserMessage } from '../interaction';
+import { read as readStore, write as writeStore, type StoreData } from '../storage/store';
+import {
+  customCharactersDir,
+  getAllCharacters,
+  loadCustomCharacters,
+} from '../customCharacters';
+import {
+  registerScreenshotHotkey as reRegisterScreenshotHotkey,
+  registerSummonHotkey as reRegisterSummonHotkey,
+} from '../hotkey';
+import { setAutoStart } from '../autostart';
+import { clearSecret, hasSecret, setSecret } from '../storage/secrets';
+import { PROVIDERS } from '../llm/providerRegistry';
+import { getSapiVoices } from '../voice/sapi';
+import { transcribeAudio } from '../voice/whisper';
+import {
+  discoverAllHermesProfiles,
+  getCachedHermesProfiles,
+  setActiveHermesProfile,
+  type HermesProfile,
+} from '../hermesDiscovery';
+import { attachFile, clearPending, pendingCount } from '../attachments';
+import {
+  captureCurrentScreen,
+  clearPendingScreenshot,
+  getPendingScreenshot,
+} from '../screenCapture';
+import {
+  createChatPanelWindow,
+  getChatPanelWindow,
+  hideChatPanel,
+  showChatPanel,
+} from '../windows/chatPanelWindow';
+import { getActiveSpriteHost } from '../activeSurface';
+import { loadHistory, getHistorySnapshot } from '../storage/conversationStore';
+import { logger } from '../logger';
+
+export function registerIpcHandlers(): void {
+  ipcMain.handle(IPC.spritePlay, async (_e, name: string) => {
+    if (!isAnimationName(name)) {
+      logger.warn('Rejecting unknown animation', name);
+      return;
+    }
+    const w = getSpriteWindow() ?? (await createSpriteWindow());
+    w.webContents.send(IPC.spritePlay, name as AnimationName);
+  });
+
+  ipcMain.handle(IPC.spriteShow, () => showSprite());
+  ipcMain.handle(IPC.spriteHide, () => hideSprite());
+  ipcMain.handle(IPC.spriteSetZoom, async (_e, zoom: number) => setZoom(zoom));
+  ipcMain.handle(IPC.spriteZoomBy, async (_e, delta: number) => {
+    zoomBy(delta);
+    const { reactToZoom } = await import('../animationController');
+    reactToZoom();
+  });
+
+  ipcMain.handle(IPC.spriteGetInitial, async () => {
+    const s = await readStore();
+    const { resolveSpriteId } = await import('../customCharacters');
+    return {
+      zoom: typeof s.zoom === 'number' ? s.zoom : 1.0,
+      muteSounds: Boolean(s.muteSounds),
+      character: resolveSpriteId(s.character || 'Merlin'),
+      appearance: s.appearance === 'retouched' ? 'retouched' as const : 'classic' as const,
+    };
+  });
+
+  ipcMain.handle(IPC.spriteDoubleClicked, () => {
+    openAskBubble();
+  });
+
+  ipcMain.handle(IPC.spriteRightClicked, async () => {
+    const sprite = getSpriteWindow();
+    if (!sprite) return;
+    const { reactToRightClick } = await import('../animationController');
+    reactToRightClick();
+    const menu = await buildMerlinMenu({
+      askMerlin: () => openAskBubble(),
+    });
+    menu.popup({ window: sprite });
+  });
+
+  ipcMain.handle(IPC.bubbleSubmit, (_e, text: string) => {
+    handleUserMessage(text);
+  });
+
+  ipcMain.handle(IPC.bubbleDismiss, () => {
+    hideBubble();
+  });
+
+  ipcMain.handle(IPC.chatAttachFile, async (_e, path: string) => {
+    const res = await attachFile(path);
+    if (res.ok) return { ok: true, name: res.attachment.name };
+    return { ok: false, error: res.error };
+  });
+
+  ipcMain.handle(IPC.chatPendingCount, () => pendingCount());
+  ipcMain.handle(IPC.chatClearPending, () => clearPending());
+
+  ipcMain.handle(
+    IPC.chatTranscribeAudio,
+    async (_e, audioBase64: string, mime: string) => {
+      return transcribeAudio(audioBase64, mime);
+    },
+  );
+
+  ipcMain.handle(IPC.chatHistory, async () => {
+    await loadHistory();
+    return getHistorySnapshot();
+  });
+
+  // ----- Chat panel (modern mode) -----
+
+  ipcMain.handle(IPC.panelSubmit, async (_e, text: string) => {
+    handleUserMessage(text);
+  });
+
+  ipcMain.handle(IPC.panelStop, async () => {
+    const { dismissBubble } = await import('../interaction');
+    // Reuse the same abort+cancel-voice path the bubble close uses.
+    dismissBubble();
+  });
+
+  ipcMain.handle(IPC.panelRegenerate, async () => {
+    await loadHistory();
+    const history = getHistorySnapshot();
+    // Walk backwards to find the most recent user turn.
+    for (let i = history.length - 1; i >= 0; i--) {
+      const t = history[i];
+      if (t?.role === 'user') {
+        handleUserMessage(t.content);
+        return;
+      }
+    }
+  });
+
+  ipcMain.handle(IPC.panelGetInitial, async () => {
+    await loadHistory();
+    const settings = await readStore();
+    const { resolveSpriteId } = await import('../customCharacters');
+    const character = resolveSpriteId(settings.character || 'Merlin');
+    const { stripAllTags } = await import('@shared/animation-protocol');
+    // History was saved with raw [anim:...]/[feel:...]/[suggest:...] tags +
+    // any italic action narration the model emitted. Strip both before
+    // shipping to the panel so users see clean text in the thread.
+    const cleanForDisplay = (raw: string): string => {
+      let s = stripAllTags(raw);
+      // Strip italic-action spans (same verbs the streaming filter uses).
+      s = s.replace(
+        /\*\s*(slides?|slid|walks?|walked|walking|runs?|ran|running|moves?|moved|moving|glides?|glided|gliding|floats?|floated|floating|hops?|hopped|hopping|flies|flew|flown|flying|sits?|sat|sitting|stands?|stood|standing|hides?|hid|hiding|vanish(?:es|ed|ing)?|drifts?|drifted|drifting|scoots?|scooted|scooting|leans?|leaned|leaning|points?|pointed|pointing|gestures?|gestured|gesturing|bows?|bowed|bowing|spins?|spun|spinning|twirls?|twirled|twirling|dances?|danced|dancing|steps?|stepped|stepping|prances?|pranced|prancing|swoops?|swooped|swooping|sails?|sailed|sailing|rises?|rose|risen|rising|falls?|fell|fallen|falling|jumps?|jumped|jumping|marches?|marched|marching|skips?|skipped|skipping|sashays|sashayed|sashaying|struts?|strutted|strutting|paces?|paced|pacing|appears?|appeared|appearing|disappears?|disappeared|disappearing|reappears?|reappeared|reappearing|lifts?|lifted|lifting|drops?|dropped|dropping|swirls?|swirled|swirling|saunters?|sauntered|sauntering|wanders?|wandered|wandering|teleports?|teleported|teleporting|materializes?|materialized|materializing|nods?|nodded|nodding|waves?|waved|waving|claps?|clapped|clapping|conjures?|conjured|conjuring|casts?|casted|casting|flourish(?:es|ed|ing)?|smiles?|smiled|smiling|looks?|looked|looking|peeks?|peeked|peeking|tilts?|tilted|tilting|stretches?|stretched|stretching|shakes?|shook|shaking)\b[^*\n]{0,200}\*/gi,
+        ''
+      );
+      // Collapse multi-newline gaps left behind by stripped tags/narration.
+      return s.replace(/\n{3,}/g, '\n\n').trim();
+    };
+    return {
+      character,
+      history: getHistorySnapshot().map((t, i) => ({
+        id: `h-${i}-${t.timestamp}`,
+        role: t.role,
+        content: t.role === 'assistant' ? cleanForDisplay(t.content) : t.content,
+        timestamp: t.timestamp,
+      })),
+    };
+  });
+
+  ipcMain.handle(IPC.chatCaptureScreen, async () => {
+    const shot = await captureCurrentScreen();
+    if (!shot) return { ok: false };
+    return { ok: true, width: shot.width, height: shot.height };
+  });
+
+  ipcMain.handle(IPC.chatPendingScreenshot, () => {
+    const s = getPendingScreenshot();
+    return s ? { width: s.width, height: s.height, bytes: s.bytes } : null;
+  });
+
+  ipcMain.handle(IPC.chatClearScreenshot, () => {
+    clearPendingScreenshot();
+  });
+
+  // Drag events: debounce into start/end edges + feed per-frame deltas to the
+  // AnimationController so it can fire directional MoveLeft/Right/Up/Down
+  // animations when the user pushes Merlin in a particular direction.
+  let dragActive = false;
+  let dragEndTimer: NodeJS.Timeout | null = null;
+  const DRAG_END_DEBOUNCE_MS = 220;
+
+  ipcMain.handle(IPC.windowDrag, async (_e, payload: { dx: number; dy: number }) => {
+    moveSpriteBy(payload.dx, payload.dy);
+    const anim = await import('../animationController');
+    if (!dragActive) {
+      dragActive = true;
+      anim.reactToDragStart();
+    }
+    anim.reactToDrag(payload.dx, payload.dy);
+    if (dragEndTimer) clearTimeout(dragEndTimer);
+    dragEndTimer = setTimeout(() => {
+      dragActive = false;
+      dragEndTimer = null;
+      void import('../animationController').then((m) => m.reactToDragEnd());
+    }, DRAG_END_DEBOUNCE_MS);
+  });
+
+  // ----- Settings IPC -----
+
+  const snapshot = (s: StoreData): {
+    llmProvider: string; llmModel: string; ollamaEndpoint: string;
+    hermesEndpoint: string;
+    voiceEngine: string; voiceName: string; character: string;
+    userName: string | null; summonHotkey: string; autoStart: boolean;
+    idleThoughtsEnabled: boolean; showWelcomeOnStart: boolean; speakWelcome: boolean;
+    screenshotHotkey: string; screenshotHotkeyEnabled: boolean;
+    displayMode: 'classic' | 'modern';
+    appearance: 'classic' | 'retouched';
+  } => ({
+    llmProvider: s.llmProvider,
+    llmModel: s.llmModel,
+    ollamaEndpoint: s.ollamaEndpoint,
+    hermesEndpoint: s.hermesEndpoint,
+    voiceEngine: s.voiceEngine,
+    voiceName: s.voiceName,
+    character: s.character,
+    userName: s.userName,
+    summonHotkey: s.summonHotkey,
+    autoStart: s.autoStart,
+    idleThoughtsEnabled: s.idleThoughtsEnabled,
+    showWelcomeOnStart: s.showWelcomeOnStart,
+    speakWelcome: s.speakWelcome,
+    screenshotHotkey: s.screenshotHotkey,
+    screenshotHotkeyEnabled: s.screenshotHotkeyEnabled,
+    displayMode: s.displayMode,
+    appearance: s.appearance === 'retouched' ? 'retouched' : 'classic',
+  });
+
+  ipcMain.handle(IPC.settingsGet, async () => snapshot(await readStore()));
+
+  ipcMain.handle(IPC.settingsSet, async (_e, patch: Partial<StoreData>) => {
+    const prev = await readStore();
+    const updated = await writeStore(patch);
+
+    // Side effects for changed fields. The tray menu uses dedicated setter
+    // helpers (setCharacter, setMuteSounds, ...) that fire the IPC events
+    // the renderer needs. The settings UI writes through this generic path,
+    // so mirror those side effects here.
+    const sprite = getSpriteWindow();
+    if (patch.character !== undefined && patch.character !== prev.character) {
+      const { resolveSpriteId } = await import('../customCharacters');
+      const spriteId = resolveSpriteId(patch.character);
+      sprite?.webContents.send(IPC.spriteSetCharacter, spriteId);
+      logger.info('character ->', patch.character, spriteId !== patch.character ? `(sprite: ${spriteId})` : '');
+    }
+    if (patch.muteSounds !== undefined && patch.muteSounds !== prev.muteSounds) {
+      sprite?.webContents.send(IPC.spriteSetMuteSounds, patch.muteSounds);
+    }
+    if (
+      patch.voiceEngine !== undefined &&
+      patch.voiceEngine !== prev.voiceEngine &&
+      patch.voiceEngine === 'off'
+    ) {
+      // Switching to off mid-stream: stop any in-flight TTS playback.
+      const { cancelVoice } = await import('../voice/tts');
+      cancelVoice();
+    }
+    if (patch.summonHotkey !== undefined && patch.summonHotkey !== prev.summonHotkey) {
+      await reRegisterSummonHotkey();
+    }
+    if (
+      (patch.screenshotHotkey !== undefined && patch.screenshotHotkey !== prev.screenshotHotkey) ||
+      (patch.screenshotHotkeyEnabled !== undefined &&
+        patch.screenshotHotkeyEnabled !== prev.screenshotHotkeyEnabled)
+    ) {
+      await reRegisterScreenshotHotkey();
+    }
+    if (patch.autoStart !== undefined && patch.autoStart !== prev.autoStart) {
+      await setAutoStart(patch.autoStart);
+    }
+    if (patch.appearance !== undefined && patch.appearance !== prev.appearance) {
+      const sprite2 = getSpriteWindow();
+      sprite2?.webContents.send(IPC.spriteSetAppearance, patch.appearance);
+      logger.info('appearance ->', patch.appearance);
+    }
+    if (patch.displayMode !== undefined && patch.displayMode !== prev.displayMode) {
+      logger.info('displayMode ->', patch.displayMode);
+      if (patch.displayMode === 'modern') {
+        // Modern: sprite stays free-floating; panel docks alongside.
+        const sw = getSpriteWindow() ?? (await createSpriteWindow());
+        sw.show();
+        hideBubble();
+        showChatPanel();
+      } else {
+        // Classic: hide the panel, sprite continues to float.
+        hideChatPanel();
+        const sw = getSpriteWindow() ?? (await createSpriteWindow());
+        sw.show();
+      }
+    }
+
+    return snapshot(updated);
+  });
+
+  ipcMain.handle(IPC.settingsGetSapiVoices, async () => {
+    return getSapiVoices();
+  });
+
+  ipcMain.handle(IPC.settingsGetProviderInfo, async () => {
+    return Object.values(PROVIDERS).map((p) => ({
+      id: p.id,
+      displayName: p.displayName,
+      suggestedModels: p.suggestedModels,
+      defaultModel: p.defaultModel,
+      needsApiKey: p.needsApiKey,
+      secretName: p.secretName,
+      keyHelpUrl: p.keyHelpUrl,
+    }));
+  });
+
+  function characterListForUi(): Array<{
+    id: string; displayName: string; description: string;
+    custom: boolean; baseCharacter?: string;
+  }> {
+    return getAllCharacters().map((c) => {
+      const custom = (c as { custom?: boolean }).custom === true;
+      const baseCharacter = (c as { baseCharacter?: string }).baseCharacter;
+      const base = {
+        id: c.id, displayName: c.displayName, description: c.description, custom,
+      };
+      return baseCharacter ? { ...base, baseCharacter } : base;
+    });
+  }
+
+  ipcMain.handle(IPC.settingsGetCharacters, () => characterListForUi());
+
+  ipcMain.handle(IPC.settingsReloadCharacters, async () => {
+    await loadCustomCharacters();
+    return characterListForUi();
+  });
+
+  ipcMain.handle(IPC.settingsOpenCharactersFolder, async () => {
+    const dir = customCharactersDir();
+    try {
+      await import('node:fs').then((fs) => fs.promises.mkdir(dir, { recursive: true }));
+    } catch {
+      // best-effort mkdir
+    }
+    await shell.openPath(dir);
+  });
+
+  ipcMain.handle(IPC.settingsDiscoverAllHermesProfiles, async (): Promise<HermesProfile[]> => {
+    return discoverAllHermesProfiles();
+  });
+
+  ipcMain.handle(IPC.settingsGetHermesProfiles, async (): Promise<HermesProfile[]> => {
+    return getCachedHermesProfiles();
+  });
+
+  ipcMain.handle(
+    IPC.settingsSetHermesProfile,
+    async (_e, profile: HermesProfile): Promise<void> => {
+      await setActiveHermesProfile(profile);
+    },
+  );
+
+  ipcMain.handle(IPC.settingsDiscoverHermesModels, async (): Promise<string[]> => {
+    const s = await readStore();
+    const base = s.hermesEndpoint?.trim();
+    if (!base) throw new Error('Hermes endpoint not configured');
+    const key = await import('../storage/secrets').then((m) => m.getSecret('hermes_api_key'));
+    if (!key) throw new Error('Hermes API key not saved');
+    const url = base.replace(/\/+$/, '') + '/models';
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${txt.slice(0, 200)}`);
+    }
+    const data = (await res.json()) as { data?: Array<{ id?: string }> };
+    return (data.data ?? []).map((m) => m.id ?? '').filter(Boolean);
+  });
+
+  ipcMain.handle(IPC.settingsOpen, () => {
+    openSettingsWindow();
+  });
+
+  ipcMain.handle(IPC.settingsClose, () => {
+    closeSettingsWindow();
+  });
+
+  ipcMain.handle(IPC.secretsSet, async (_e, name: string, value: string) => {
+    await setSecret(name, value);
+  });
+
+  ipcMain.handle(IPC.secretsHas, async (_e, name: string) => {
+    return hasSecret(name);
+  });
+
+  ipcMain.handle(IPC.secretsClear, async (_e, name: string) => {
+    await clearSecret(name);
+  });
+
+  ipcMain.handle(IPC.secretsOpenLink, async (_e, url: string) => {
+    try {
+      await shell.openExternal(url);
+    } catch (err) {
+      logger.warn('openExternal failed', err);
+    }
+  });
+}
