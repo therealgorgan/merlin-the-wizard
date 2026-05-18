@@ -243,6 +243,10 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
         await forgetConversation();
       },
     },
+    {
+      label: 'Stop Voice',
+      click: () => cancelVoice(),
+    },
     { type: 'separator' },
     {
       label: 'Show Merlin',

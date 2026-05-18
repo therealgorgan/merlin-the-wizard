@@ -36,27 +36,41 @@ function applyAppearance(appearance: 'classic' | 'retouched'): void {
 }
 
 let mediaMuted = false;
+// Auto-mute flag — set true while TTS audio is queued/playing so animation
+// sounds (clippyjs sound-bank effects baked into each Merlin animation)
+// don't compete with the spoken response. Updated by the voice playback
+// loop further down in this file.
+let voicePlaybackActive = false;
 const origMediaPlay = HTMLMediaElement.prototype.play;
 type MaybeVoice = HTMLMediaElement & { __merlinVoice?: boolean };
 HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-  if (mediaMuted && !(this as MaybeVoice).__merlinVoice) {
+  const isVoice = (this as MaybeVoice).__merlinVoice === true;
+  // Voice always plays. Non-voice (animation SFX) is gated by both the
+  // user's mute setting AND the in-flight-voice auto-mute.
+  if (!isVoice && (mediaMuted || voicePlaybackActive)) {
     return Promise.resolve();
   }
   return origMediaPlay.call(this);
 };
 
+/** Pause + reset all <audio> elements except the currently-playing voice
+ *  chunk. Used both when the user mutes via settings and when TTS voice
+ *  starts (so any animation SFX already mid-play gets silenced immediately). */
+function silenceNonVoiceAudio(): void {
+  document.querySelectorAll('audio').forEach((a) => {
+    if ((a as MaybeVoice).__merlinVoice) return;
+    try {
+      a.pause();
+      a.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
 function applyMute(muted: boolean): void {
   mediaMuted = muted;
-  if (muted) {
-    document.querySelectorAll('audio').forEach((a) => {
-      try {
-        a.pause();
-        a.currentTime = 0;
-      } catch {
-        /* ignore */
-      }
-    });
-  }
+  if (muted) silenceNonVoiceAudio();
 }
 
 interface SpriteEventsApi {
@@ -280,13 +294,38 @@ void (async () => {
   });
   api.onSetAppearance(applyAppearance);
 
-  // TTS voice playback queue (unchanged from before).
+  // TTS voice playback queue.
   const voiceQueue: HTMLAudioElement[] = [];
   let voicePlaying: HTMLAudioElement | null = null;
+  // Last reported active state — only fire IPC on transitions to keep the
+  // channel quiet during stable periods.
+  let lastReportedActive = false;
+  function reportAudioState(): void {
+    if (!api) return;
+    const active = voicePlaying !== null || voiceQueue.length > 0;
+    // Mirror the active flag into the module-scope mute gate. Done on every
+    // call (not just transitions) so the gate is always in sync, even if a
+    // transition IPC was skipped for any reason.
+    voicePlaybackActive = active;
+    if (active === lastReportedActive) return;
+    lastReportedActive = active;
+    // When voice goes from idle → active, silence any animation SFX that's
+    // already mid-play so the spoken response isn't drowned out.
+    if (active) silenceNonVoiceAudio();
+    api.reportAudioState(active);
+  }
   function playNextVoice(): void {
-    if (voicePlaying || voiceQueue.length === 0) return;
+    if (voicePlaying || voiceQueue.length === 0) {
+      // Queue went to fully idle (no playing, no queued). Tell main so the
+      // 'speaking' state can wind down to 'idle' once it's safe.
+      if (!voicePlaying && voiceQueue.length === 0) reportAudioState();
+      return;
+    }
     voicePlaying = voiceQueue.shift() ?? null;
-    if (!voicePlaying) return;
+    if (!voicePlaying) {
+      reportAudioState();
+      return;
+    }
     voicePlaying.addEventListener('ended', () => {
       voicePlaying = null;
       playNextVoice();
@@ -311,6 +350,7 @@ void (async () => {
       .catch((err: Error) => {
         console.warn('[merlin-voice] play() rejected:', err?.name, err?.message);
       });
+    reportAudioState();
   }
   api.onPlayAudio((dataUrl: string) => {
     console.log('[merlin-voice] received audio data URL,', dataUrl.length, 'chars');
@@ -319,6 +359,7 @@ void (async () => {
     audio.volume = 1.0;
     audio.muted = false;
     voiceQueue.push(audio);
+    reportAudioState();
     playNextVoice();
   });
   api.onStopAudio(() => {
@@ -331,6 +372,7 @@ void (async () => {
       }
       voicePlaying = null;
     }
+    reportAudioState();
   });
 
   wireMouseEvents();

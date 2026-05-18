@@ -20,7 +20,8 @@ import {
   type ChatTurn,
 } from './storage/conversationStore';
 import { setMood, isMood } from './feelings';
-import { speak as ttsSpeak, cancelVoice, onceFirstAudioReady } from './voice/tts';
+import { speak as ttsSpeak, cancelVoice, onceFirstAudioReady, waitForSynthDrain } from './voice/tts';
+import { waitForVoiceIdle } from './voice/audioState';
 import { SentenceSplitter } from './voice/sentenceSplitter';
 import { markInteraction } from './brain';
 import { consumePendingAttachments } from './attachments';
@@ -470,7 +471,25 @@ async function streamFromProvider(): Promise<void> {
       replyChars: visibleText.length,
     });
   }
+
+  // Hold the 'speaking' state (and its gesture cycle) open until TTS audio
+  // has actually finished playing — otherwise Merlin freezes mid-sentence
+  // when the LLM stream completes before the last queued audio chunks have
+  // played out. Two waits because synth and playback are independent: the
+  // synth queue may still have sentences to render after the stream is done,
+  // and the renderer's audio queue may still be playing chunks we already
+  // sent. Both have timeouts so a stuck backend can't hang the chat
+  // lifecycle forever.
+  if (voiceEngine !== 'off') {
+    await waitForSynthDrain(30_000);
+    await waitForVoiceIdle(60_000);
+  }
   anim.chatEnd();
+  // Reset the brain's idle countdown so an idle thought doesn't fire
+  // immediately after a long response (the brain's IDLE_AFTER_MS is measured
+  // from lastInteractionAt, which was set when the user submitted — that can
+  // be 60+ seconds ago by the time chat fully ends).
+  markInteraction();
 }
 
 export type { ChatTurn };

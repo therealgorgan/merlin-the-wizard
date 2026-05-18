@@ -139,6 +139,22 @@ section h2 {
   color: #b0b0b8;
   font-size: 12px;
 }
+/* Checkbox rows wrap the whole description inside the <label> (so clicking
+   the text also toggles the box). The fixed 90px flex above was clipping
+   those wider labels into vertical wraps. Detect them via :has() and let
+   the label take the full row width. */
+.row label:has(input[type="checkbox"]) {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e8e8ec;
+  cursor: pointer;
+}
+.row label:has(input[type="checkbox"]) input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
 .row input,
 .row select {
   flex: 1 1 auto;

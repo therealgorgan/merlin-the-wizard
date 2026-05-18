@@ -307,6 +307,16 @@ body[data-tail='bottom'] .panel-tail::after {
   opacity: 1;
   transform: translateY(-1px);
 }
+/* Permanent thoughts (promoted when the user replied while one was visible)
+   are part of the conversation record now — full opacity, no hover lift,
+   no click-to-engage cursor. */
+.thread .turn.idle-thought.permanent {
+  cursor: default;
+  opacity: 1;
+}
+.thread .turn.idle-thought.permanent:hover {
+  transform: none;
+}
 .thread .turn.idle-thought .turn-header {
   color: #d0a868;
   font-style: italic;

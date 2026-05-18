@@ -33,6 +33,7 @@ function App(): React.ReactElement {
     width: number; height: number; bytes: number;
   } | null>(null);
   const [recording, setRecording] = useState(false);
+  const [audioActive, setAudioActive] = useState(false);
   const [idleThoughts, setIdleThoughts] = useState<PanelIdleThought[]>([]);
   // Re-render tick used to update countdown displays; bumped every second
   // while at least one idle thought is visible.
@@ -42,18 +43,22 @@ function App(): React.ReactElement {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
-  // Tick once per second to refresh the countdown labels on idle thoughts, and
-  // drop any whose TTL has expired. Only runs while there's at least one
-  // thought to track — idles cleanly when the thread is conversation-only.
+  // Tick once per second to refresh the countdown labels on transient idle
+  // thoughts, and drop any whose TTL has expired. Permanent thoughts (those
+  // the user has engaged with) are skipped — they stay in the thread forever.
+  // The interval idles cleanly when there are no transient thoughts left.
   useEffect(() => {
-    if (idleThoughts.length === 0) return;
+    const hasTransient = idleThoughts.some((t) => !t.permanent);
+    if (!hasTransient) return;
     const handle = window.setInterval(() => {
       const now = Date.now();
-      setIdleThoughts((prev) => prev.filter((t) => t.emittedAt + t.ttlMs > now));
+      setIdleThoughts((prev) =>
+        prev.filter((t) => t.permanent || t.emittedAt + t.ttlMs > now),
+      );
       setTick((n) => n + 1);
     }, 1000);
     return () => window.clearInterval(handle);
-  }, [idleThoughts.length]);
+  }, [idleThoughts]);
 
   const dismissIdleThought = (id: string): void => {
     setIdleThoughts((prev) => prev.filter((t) => t.id !== id));
@@ -171,9 +176,10 @@ function App(): React.ReactElement {
       // Append (replace any existing one with the same id to be idempotent).
       setIdleThoughts((prev) => [...prev.filter((t) => t.id !== thought.id), thought]);
     });
+    const offAudio = api.onSetAudioActive((active) => setAudioActive(active));
     return () => {
       offUser(); offChunk(); offStreaming(); offFinal();
-      offSug(); offOpen(); offTail(); offIdle();
+      offSug(); offOpen(); offTail(); offIdle(); offAudio();
     };
   }, []);
 
@@ -227,6 +233,16 @@ function App(): React.ReactElement {
   const submit = (): void => {
     const text = input.trim();
     if (!text && !pendingScreenshot && attachments.length === 0) return;
+    // Promote any visible idle thoughts to permanent — the user is engaging
+    // with the conversation, so the thought becomes part of the record
+    // instead of fading away mid-reply. Also notify main so the dismiss-
+    // cooldown updates (the user's reply effectively "answers" the thought).
+    setIdleThoughts((prev) => {
+      for (const t of prev) {
+        if (!t.permanent) api.dismissIdleThought(t.id);
+      }
+      return prev.map((t) => (t.permanent ? t : { ...t, permanent: true }));
+    });
     api.submit(text || 'What do you see?');
     setInput('');
     setAttachments([]);
@@ -319,74 +335,114 @@ function App(): React.ReactElement {
       </div>
 
       <div className="thread" ref={threadRef}>
-        {turns.length === 0 && !streaming && (
+        {turns.length === 0 && !streaming && idleThoughts.length === 0 && (
           <div className="empty-state">
             No conversation yet. Type below or use the mic to start.
           </div>
         )}
-        {turns.map((t, i) => {
-          const isLastAssistant = t.role === 'assistant' && i === turns.length - 1;
-          return (
-            <div key={t.id} className={`turn ${t.role}`}>
-              <div className="turn-header">
-                <span>{t.role === 'user' ? 'You' : character}</span>
-                {isLastAssistant && !t.streaming && (
-                  <div className="turn-actions">
-                    <button onClick={() => api.regenerate()} title="Regenerate response">
-                      ↻ Regenerate
-                    </button>
+        {/* Interleave turns + idle thoughts by timestamp so a thought stays
+            anchored to the moment it was emitted, even after the user replies.
+            Previously thoughts were rendered after the turns array (always at
+            the bottom), so new replies would slot in ABOVE the thought.
+            Last assistant turn is computed in advance because the merged
+            order isn't a simple suffix on `turns` anymore. */}
+        {(() => {
+          type Item =
+            | { kind: 'turn'; turn: PanelChatTurn; ts: number }
+            | { kind: 'thought'; thought: PanelIdleThought; ts: number };
+          const items: Item[] = [
+            ...turns.map((t) => ({ kind: 'turn' as const, turn: t, ts: t.timestamp })),
+            ...idleThoughts.map((th) => ({
+              kind: 'thought' as const,
+              thought: th,
+              ts: th.emittedAt,
+            })),
+          ];
+          items.sort((a, b) => a.ts - b.ts);
+          const lastAssistantId = (() => {
+            for (let i = turns.length - 1; i >= 0; i--) {
+              const t = turns[i];
+              if (t && t.role === 'assistant') return t.id;
+            }
+            return null;
+          })();
+          return items.map((item) => {
+            if (item.kind === 'turn') {
+              const t = item.turn;
+              const isLastAssistant = t.id === lastAssistantId;
+              return (
+                <div key={t.id} className={`turn ${t.role}`}>
+                  <div className="turn-header">
+                    <span>{t.role === 'user' ? 'You' : character}</span>
+                    {isLastAssistant && !t.streaming && (
+                      <div className="turn-actions">
+                        <button onClick={() => api.regenerate()} title="Regenerate response">
+                          ↻ Regenerate
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <div className="turn-content">
-                {t.streaming && !t.content ? (
-                  <div className="typing-dots"><span /><span /><span /></div>
-                ) : (
+                  <div className="turn-content">
+                    {t.streaming && !t.content ? (
+                      <div className="typing-dots"><span /><span /><span /></div>
+                    ) : (
+                      <div
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(t.content) }}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            }
+            const thought = item.thought;
+            const permanent = thought.permanent === true;
+            const remaining = permanent
+              ? 0
+              : Math.max(
+                  0,
+                  Math.ceil((thought.emittedAt + thought.ttlMs - Date.now()) / 1000),
+                );
+            const totalSecs = Math.max(1, Math.round(thought.ttlMs / 1000));
+            const pctRemaining = permanent
+              ? 0
+              : Math.max(0, Math.min(100, (remaining / totalSecs) * 100));
+            return (
+              <div
+                key={thought.id}
+                className={`turn idle-thought ${permanent ? 'permanent' : ''}`}
+                onClick={permanent ? undefined : () => respondToIdleThought(thought)}
+                title={permanent ? undefined : 'Click to reply, or wait for it to fade'}
+              >
+                <div className="turn-header">
+                  <span>
+                    💭 {character} {permanent ? '(thought)' : '(idle thought)'}
+                  </span>
+                  <div className="turn-actions">
+                    {!permanent && (
+                      <span className="idle-countdown" title={`${remaining} seconds until this fades`}>
+                        ⏱ <span className="idle-countdown-num">{remaining}</span><span className="idle-countdown-unit">sec</span>
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        dismissIdleThought(thought.id);
+                      }}
+                      title={permanent ? 'Remove' : 'Dismiss'}
+                    >×</button>
+                  </div>
+                </div>
+                <div className="turn-content">{thought.text}</div>
+                {!permanent && (
                   <div
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(t.content) }}
+                    className="idle-progress"
+                    style={{ width: `${pctRemaining}%` }}
                   />
                 )}
               </div>
-            </div>
-          );
-        })}
-        {idleThoughts.map((thought) => {
-          const remaining = Math.max(
-            0,
-            Math.ceil((thought.emittedAt + thought.ttlMs - Date.now()) / 1000),
-          );
-          const totalSecs = Math.max(1, Math.round(thought.ttlMs / 1000));
-          const pctRemaining = Math.max(0, Math.min(100, (remaining / totalSecs) * 100));
-          return (
-            <div
-              key={thought.id}
-              className="turn idle-thought"
-              onClick={() => respondToIdleThought(thought)}
-              title="Click to reply, or wait for it to fade"
-            >
-              <div className="turn-header">
-                <span>💭 {character} (idle thought)</span>
-                <div className="turn-actions">
-                  <span className="idle-countdown" title={`${remaining} seconds until this fades`}>
-                    ⏱ <span className="idle-countdown-num">{remaining}</span><span className="idle-countdown-unit">sec</span>
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      dismissIdleThought(thought.id);
-                    }}
-                    title="Dismiss"
-                  >×</button>
-                </div>
-              </div>
-              <div className="turn-content">{thought.text}</div>
-              <div
-                className="idle-progress"
-                style={{ width: `${pctRemaining}%` }}
-              />
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
       </div>
 
       {suggestions.length > 0 && !streaming && (
@@ -443,12 +499,17 @@ function App(): React.ReactElement {
             onKeyDown={onKeyDown}
             rows={1}
           />
-          {streaming ? (
+          {streaming || audioActive ? (
+            // Stop button covers both states: cancels an in-flight LLM stream
+            // AND any TTS audio that's still playing. api.stop() routes to
+            // dismissBubble in main, which aborts the stream + cancelVoice.
             <button
               className="send-btn stop-btn"
               onClick={() => api.stop()}
-              title="Stop"
-            >■ Stop</button>
+              title={streaming ? 'Stop generating' : 'Stop voice'}
+            >
+              ■ {streaming ? 'Stop' : 'Mute'}
+            </button>
           ) : (
             <button
               className="send-btn"

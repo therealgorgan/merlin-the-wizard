@@ -13,6 +13,10 @@ export const IPC = {
   spriteSetMuteSounds: 'sprite:setMuteSounds',
   spritePlayAudio: 'sprite:playAudio',
   spriteStopAudio: 'sprite:stopAudio',
+  /** Renderer → main: reports whether the audio queue + currently-playing
+   *  audio are still active. Lets main keep the 'speaking' state (and its
+   *  gesture cycle) alive until the user actually stops hearing Merlin. */
+  spriteAudioStateChanged: 'sprite:audioStateChanged',
   spriteSetCharacter: 'sprite:setCharacter',
   spriteSetAppearance: 'sprite:setAppearance',
   spriteGetInitial: 'sprite:getInitial',
@@ -39,6 +43,9 @@ export const IPC = {
   panelSetTailSide: 'panel:setTailSide',
   panelAddIdleThought: 'panel:addIdleThought',
   panelDismissIdleThought: 'panel:dismissIdleThought',
+  /** Main → panel: voice playback active/idle. Drives the Stop button so the */
+  /** user can interrupt TTS even after the LLM stream has completed. */
+  panelSetAudioActive: 'panel:setAudioActive',
   panelSubmit: 'panel:submit',
   panelStop: 'panel:stop',
   panelRegenerate: 'panel:regenerate',
@@ -125,6 +132,10 @@ export interface SpriteApi {
   reportAnimationDone: (name: AnimationName) => void;
   /** Drag the window by delta (main moves the window). */
   startDrag: () => void;
+  /** Renderer notifies main when its TTS audio queue transitions between
+   *  playing-something and fully-drained. Main uses this to keep the
+   *  'speaking' state alive until the audio actually finishes. */
+  reportAudioState: (active: boolean) => void;
 }
 
 export type BubbleMode = 'read' | 'ask';
@@ -213,6 +224,10 @@ export interface PanelIdleThought {
   emittedAt: number;
   /** How long until it expires (ms from emittedAt). */
   ttlMs: number;
+  /** Set true once the user has engaged (typed a reply while it was visible). */
+  /** Permanent thoughts skip the countdown chip and never auto-expire — they */
+  /** become a part of the chat record alongside the user's turn. */
+  permanent?: boolean;
 }
 
 export interface PanelApi {
@@ -234,6 +249,9 @@ export interface PanelApi {
   /** Tell main the user dismissed (or the timer expired) an idle thought, */
   /** so brain doesn't fire it again immediately. */
   dismissIdleThought: (id: string) => void;
+  /** Voice playback active/idle. Used to keep the Stop button visible while */
+  /** TTS is still playing, so the user can interrupt mid-sentence. */
+  onSetAudioActive: (cb: (active: boolean) => void) => () => void;
   /** Open the panel + focus the input. */
   onOpenForAsk: (cb: () => void) => () => void;
   /** Submit user text from the panel back to main. */

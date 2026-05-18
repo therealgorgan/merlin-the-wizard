@@ -67,6 +67,9 @@ const api: SpriteApi = {
   startDrag() {
     // Drag handled by -webkit-app-region: drag in the renderer CSS.
   },
+  reportAudioState(active: boolean) {
+    void ipcRenderer.invoke(IPC.spriteAudioStateChanged, active);
+  },
 };
 
 contextBridge.exposeInMainWorld('spriteApi', api);

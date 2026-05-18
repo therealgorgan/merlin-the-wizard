@@ -469,15 +469,25 @@ export async function getMuteSounds(): Promise<boolean> {
   return (await read()).muteSounds;
 }
 
-export async function setVoiceEngine(engine: 'off' | 'sapi' | 'groq' | 'openrouter' | 'edge'): Promise<string> {
+type VoiceEngineName = 'off' | 'sapi' | 'groq' | 'openrouter' | 'edge' | 'elevenlabs';
+
+export async function setVoiceEngine(engine: VoiceEngineName): Promise<string> {
   await write({ voiceEngine: engine });
   logger.info('voice engine:', engine);
   return engine;
 }
 
-export async function getVoiceEngine(): Promise<'off' | 'sapi' | 'groq' | 'openrouter' | 'edge'> {
+export async function getVoiceEngine(): Promise<VoiceEngineName> {
   const v = (await read()).voiceEngine ?? 'off';
-  if (v === 'sapi' || v === 'groq' || v === 'openrouter' || v === 'edge') return v;
+  if (
+    v === 'sapi' ||
+    v === 'groq' ||
+    v === 'openrouter' ||
+    v === 'edge' ||
+    v === 'elevenlabs'
+  ) {
+    return v;
+  }
   return 'off';
 }
 

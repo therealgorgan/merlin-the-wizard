@@ -186,10 +186,17 @@ interface MoodPalette {
   confusion: readonly AnimationName[]; // user is vague / "?" repeated
 }
 
+// Speaking-cycle animation pools deliberately bias toward short durations
+// (Explain 0.6s, Pleased 0.5s, Gesture* 0.5s, Acknowledge 0.75s). The longer
+// Hearing_* animations (4s each) cause visible overhang when fired near the
+// end of TTS audio playback — the cycle stops scheduling new ones at
+// chatEnd, but a Hearing that just started would still have ~3s left to
+// play. Keep at most one Hearing variant per palette as a flavor option.
+
 const PALETTES: Record<Mood, MoodPalette> = {
   cheerful: {
     fidget: ['Pleased', 'Acknowledge', 'Wave', 'Surprised'],
-    speaking: ['Hearing_1', 'Hearing_2', 'Explain', 'Pleased'],
+    speaking: ['Explain', 'Pleased', 'Acknowledge', 'GestureLeft', 'GestureRight', 'Hearing_1'],
     wake: ['Greet', 'Wave', 'Pleased'],
     success: ['DoMagic1', 'Pleased', 'Congratulate'],
     failure: ['Confused', 'Uncertain'],
@@ -199,7 +206,7 @@ const PALETTES: Record<Mood, MoodPalette> = {
   },
   thoughtful: {
     fidget: ['LookLeft', 'LookRight', 'Acknowledge', 'Idle1_1'],
-    speaking: ['Hearing_3', 'Hearing_4', 'Explain', 'Process'],
+    speaking: ['Explain', 'Acknowledge', 'GestureLeft', 'GestureRight', 'Hearing_3'],
     wake: ['Acknowledge', 'Explain'],
     success: ['Acknowledge', 'DoMagic2', 'Pleased'],
     failure: ['Confused', 'LookDown'],
@@ -209,7 +216,7 @@ const PALETTES: Record<Mood, MoodPalette> = {
   },
   mischievous: {
     fidget: ['GestureLeft', 'GestureRight', 'Surprised', 'Wave'],
-    speaking: ['Hearing_2', 'Hearing_4', 'GestureLeft', 'GestureRight'],
+    speaking: ['GestureLeft', 'GestureRight', 'Pleased', 'Explain', 'Acknowledge'],
     wake: ['Surprised', 'Wave', 'GetAttention'],
     success: ['DoMagic1', 'DoMagic2', 'Congratulate_2'],
     failure: ['Confused', 'Surprised'],
@@ -219,7 +226,7 @@ const PALETTES: Record<Mood, MoodPalette> = {
   },
   puzzled: {
     fidget: ['Confused', 'Uncertain', 'LookLeft', 'LookRight'],
-    speaking: ['Hearing_1', 'Hearing_2', 'Explain', 'Uncertain'],
+    speaking: ['Explain', 'Acknowledge', 'Uncertain', 'GestureLeft', 'Hearing_1'],
     wake: ['Confused', 'Acknowledge'],
     success: ['Pleased', 'Acknowledge'],
     failure: ['Confused', 'DontRecognize', 'Sad'],
@@ -229,7 +236,7 @@ const PALETTES: Record<Mood, MoodPalette> = {
   },
   sad: {
     fidget: ['Sad', 'LookDown', 'Acknowledge', 'Idle1_1'],
-    speaking: ['Hearing_3', 'Hearing_4', 'Sad', 'LookDown'],
+    speaking: ['LookDown', 'Acknowledge', 'Explain', 'Hearing_3'],
     wake: ['Acknowledge', 'Sad'],
     success: ['Acknowledge', 'Pleased'],
     failure: ['Sad', 'LookDown'],
@@ -242,7 +249,7 @@ const PALETTES: Record<Mood, MoodPalette> = {
     // sleep timer fire. Using it as a fidget made Merlin look like he was
     // dozing off mid-interaction. Picked calmer Look/Idle gestures instead.
     fidget: ['LookDownBlink', 'LookDown', 'Idle1_1', 'Idle2_1', 'Blink'],
-    speaking: ['Hearing_1', 'Hearing_3', 'Hearing_4'],
+    speaking: ['Acknowledge', 'Explain', 'Blink'],
     wake: ['LookUp', 'Acknowledge'],
     success: ['Pleased', 'Acknowledge'],
     failure: ['Confused', 'LookDown'],
@@ -252,7 +259,7 @@ const PALETTES: Record<Mood, MoodPalette> = {
   },
   curious: {
     fidget: ['LookLeft', 'LookRight', 'LookUp', 'Search'],
-    speaking: ['Hearing_2', 'Hearing_4', 'Search', 'Reading'],
+    speaking: ['Explain', 'GestureLeft', 'GestureRight', 'Acknowledge', 'LookUp'],
     wake: ['LookUp', 'Greet', 'Surprised'],
     success: ['Pleased', 'DoMagic1'],
     failure: ['Confused', 'LookDown'],
@@ -262,7 +269,7 @@ const PALETTES: Record<Mood, MoodPalette> = {
   },
   pleased: {
     fidget: ['Pleased', 'Acknowledge', 'Wave', 'Congratulate'],
-    speaking: ['Hearing_1', 'Hearing_2', 'Explain', 'Pleased'],
+    speaking: ['Pleased', 'Explain', 'Acknowledge', 'GestureRight', 'Hearing_1'],
     wake: ['Greet', 'Wave', 'Pleased'],
     success: ['DoMagic2', 'Congratulate', 'Congratulate_2'],
     failure: ['Confused'],
@@ -354,17 +361,14 @@ function scheduleNextSpeakingGesture(): void {
 // animation every 3-6s so the user has constant feedback that something is
 // actually happening.
 
+// Short-duration only — the "ing" variants (Thinking 7.4s, Processing 5.2s,
+// Reading 9.7s, Writing 6.4s, Searching 6.3s) outlast the cycle interval and
+// pile up in the queue, then keep playing well after chatEnd. The short
+// variants (Think 0.8s, Read 2.5s, Write 3.2s) fit cleanly inside one cycle.
 const THINKING_ANIMATIONS: readonly AnimationName[] = [
   'Think',
-  'Thinking',
-  'Process',
-  'Processing',
   'Read',
-  'Reading',
   'Write',
-  'Writing',
-  'Search',
-  'Searching',
 ];
 
 let thinkingTimer: NodeJS.Timeout | null = null;
@@ -734,6 +738,9 @@ export function chatStart(): void {
 }
 
 export function chatFirstReply(): void {
+  // Cut off any in-flight thinking gesture before we start speaking — no
+  // point letting a Reading animation linger 5s into the actual reply.
+  interruptCurrent();
   setIntent('speaking', 'first-reply');
   send('Explain', { important: true });
   scheduleNextSpeakingGesture();
@@ -742,12 +749,19 @@ export function chatFirstReply(): void {
 export function chatEnd(): void {
   clearSpeakingTimer();
   if (intent === 'hidden') return;
+  // Crisp end: clear the renderer-side animation queue + interrupt the
+  // currently-playing gesture so a long speaking/thinking anim doesn't
+  // overhang past the end of TTS audio. ClippyController.stop() handles
+  // both via agent.stop + queue.clear, then sets up the natural idle
+  // scheduler so Merlin doesn't freeze on a final frame.
+  interruptCurrent();
   setIntent('idle', 'chat-end');
 }
 
 export function chatAborted(): void {
   clearSpeakingTimer();
   if (intent === 'hidden') return;
+  interruptCurrent();
   setIntent('idle', 'chat-aborted');
 }
 

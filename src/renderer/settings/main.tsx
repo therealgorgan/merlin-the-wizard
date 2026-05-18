@@ -16,6 +16,22 @@ declare global {
 
 const api = window.settingsApi;
 
+// Mirror of voice/elevenlabs.ts presets — duplicated here because the
+// renderer can't import from main-process modules. Keep in sync if the
+// main-side list changes.
+const ELEVENLABS_PRESETS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel — calm female (default)' },
+  { id: 'AZnzlk1XvdvUeBnXmlld', label: 'Domi — strong female' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', label: 'Bella — soft female' },
+  { id: 'ErXwobaYiN019PkySvjV', label: 'Antoni — well-rounded male' },
+  { id: 'MF3mGyEYCl7XYWbV9V6O', label: 'Elli — emotional female' },
+  { id: 'TxGEqnHWrfWFTfGW9XjX', label: 'Josh — deep male' },
+  { id: 'VR6AewLTigWG4xSOukaG', label: 'Arnold — crisp male' },
+  { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam — narration male' },
+  { id: 'yoZ06aMxZJJ28mfd3POQ', label: 'Sam — raspy male' },
+];
+const ELEVENLABS_PRESET_IDS = new Set(ELEVENLABS_PRESETS.map((v) => v.id));
+
 function ProviderCard(props: {
   info: ProviderInfoForUi;
   selected: boolean;
@@ -294,24 +310,28 @@ function App(): React.ReactElement {
   const [characters, setCharacters] = useState<CharacterForUi[]>([]);
   const [tavilyKey, setTavilyKey] = useState('');
   const [tavilySaved, setTavilySaved] = useState(false);
+  const [elevenLabsKey, setElevenLabsKey] = useState('');
+  const [elevenLabsSaved, setElevenLabsSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savedAt, setSavedAt] = useState<number>(0);
 
   useEffect(() => {
     void (async () => {
       if (!api) return;
-      const [p, s, v, chars, tav] = await Promise.all([
+      const [p, s, v, chars, tav, el] = await Promise.all([
         api.getProviders(),
         api.get(),
         api.getSapiVoices(),
         api.getCharacters(),
         api.hasSecret('tavily_api_key'),
+        api.hasSecret('elevenlabs_api_key'),
       ]);
       setProviders(p);
       setSettings(s);
       setSapiVoices(v);
       setCharacters(chars);
       setTavilySaved(tav);
+      setElevenLabsSaved(el);
       const flags: Record<string, boolean> = {};
       for (const provider of p) {
         if (provider.secretName) {
@@ -464,6 +484,7 @@ function App(): React.ReactElement {
               <option value="edge">Microsoft Edge Neural (cloud, free, no key)</option>
               <option value="groq">Groq Orpheus (cloud, uses Groq key)</option>
               <option value="openrouter">OpenRouter TTS (cloud, uses OpenRouter key)</option>
+              <option value="elevenlabs">ElevenLabs (cloud, separate key — full Voice Library)</option>
             </select>
           </div>
           {settings.voiceEngine === 'sapi' && (
@@ -558,6 +579,84 @@ function App(): React.ReactElement {
               </div>
               <div className="status">
                 Uses your OpenRouter API key. Model: openai/gpt-4o-mini-tts.
+              </div>
+            </>
+          )}
+          {settings.voiceEngine === 'elevenlabs' && (
+            <>
+              <div className="row">
+                <label htmlFor="el-key">ElevenLabs API key</label>
+                <input
+                  id="el-key"
+                  type="password"
+                  value={elevenLabsKey}
+                  placeholder={elevenLabsSaved ? '•••••••• (saved)' : 'paste your xi-api-key'}
+                  onChange={(e) => setElevenLabsKey(e.target.value)}
+                />
+                <button
+                  className="primary"
+                  disabled={!elevenLabsKey}
+                  onClick={async () => {
+                    await api.setSecret('elevenlabs_api_key', elevenLabsKey);
+                    setElevenLabsKey('');
+                    setElevenLabsSaved(true);
+                  }}
+                >
+                  Save
+                </button>
+                {elevenLabsSaved && (
+                  <button
+                    className="danger-link"
+                    onClick={async () => {
+                      await api.clearSecret('elevenlabs_api_key');
+                      setElevenLabsSaved(false);
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className="row">
+                <label htmlFor="el-voice-preset">Preset voice</label>
+                <select
+                  id="el-voice-preset"
+                  value={
+                    ELEVENLABS_PRESET_IDS.has(settings.voiceName)
+                      ? settings.voiceName
+                      : '__custom__'
+                  }
+                  onChange={(e) => {
+                    if (e.target.value !== '__custom__') {
+                      void update({ voiceName: e.target.value });
+                    }
+                  }}
+                >
+                  {ELEVENLABS_PRESETS.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}
+                    </option>
+                  ))}
+                  <option value="__custom__">— Custom voice_id below —</option>
+                </select>
+              </div>
+              <div className="row">
+                <label htmlFor="el-voice-id">Custom voice ID</label>
+                <input
+                  id="el-voice-id"
+                  type="text"
+                  value={settings.voiceName ?? ''}
+                  placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+                  onChange={(e) => void update({ voiceName: e.target.value })}
+                />
+              </div>
+              <div className="status">
+                Add any voice from{' '}
+                <button className="help" onClick={() => api.openExternal('https://elevenlabs.io/voice-library')}>
+                  the ElevenLabs Voice Library →
+                </button>{' '}
+                to your account, then paste its voice_id above. Billed per
+                character against your ElevenLabs quota (free tier: ~10k
+                chars/month). Model: eleven_turbo_v2_5.
               </div>
             </>
           )}

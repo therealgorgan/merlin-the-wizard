@@ -54,6 +54,11 @@ const api: PanelApi = {
   dismissIdleThought(id: string): void {
     void ipcRenderer.invoke(IPC.panelDismissIdleThought, id);
   },
+  onSetAudioActive(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, active: boolean): void => cb(active);
+    ipcRenderer.on(IPC.panelSetAudioActive, handler);
+    return () => ipcRenderer.off(IPC.panelSetAudioActive, handler);
+  },
   submit(text: string): void {
     void ipcRenderer.invoke(IPC.panelSubmit, text);
   },

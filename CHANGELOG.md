@@ -13,6 +13,110 @@ Nothing yet.
 
 ---
 
+## [0.3.0] — 2026-05-17
+
+Same-day follow-up to `0.2.0`. Headline items: a new **ElevenLabs** TTS engine
+with full Voice Library access, the speaking-gesture cycle now stays in sync
+with actual audio playback (not just the LLM stream), clippyjs sound effects
+auto-mute during TTS so they don't compete with the spoken response, idle
+thoughts are no longer interruptive (they wait their turn AND become part of
+the chat record when you reply to them), and there's finally a Stop button
+for runaway voice.
+
+### Added
+
+- **ElevenLabs TTS engine.** Sixth voice option alongside Off / SAPI / Edge /
+  Groq / OpenRouter. Curated dropdown of nine built-in voices (Rachel, Adam,
+  Antoni, Bella, Domi, Elli, Josh, Arnold, Sam) plus a custom voice ID input
+  so you can use any voice you've added from the public Voice Library.
+  Default model is `eleven_multilingual_v2` for broad voice compatibility.
+  API key stored via `safeStorage` like the other secrets.
+- **Audio-gated speaking cycle.** When voice is enabled, the `'speaking'`
+  intent (and its gesture cycle) now stays alive until TTS audio actually
+  finishes playing — not just until the LLM stream completes. Sprite
+  renderer reports its audio-queue state to main via a new IPC; main waits
+  on both `waitForSynthDrain` (synthesis queue empty) and `waitForVoiceIdle`
+  (renderer audio queue drained) before calling `chatEnd`. Merlin keeps
+  gesturing through the entire spoken response, then transitions to idle.
+- **Auto-mute clippyjs SFX during TTS.** The override on `HTMLMediaElement.
+  prototype.play` now blocks animation sound effects whenever voice playback
+  is active. Bonus: when voice starts, any SFX already mid-play gets paused
+  immediately via a `silenceNonVoiceAudio()` helper.
+- **Idle thoughts persist as part of the conversation record.** When you
+  reply while an idle thought is visible, the thought is promoted to
+  `permanent: true` — countdown chip and progress bar disappear, auto-expire
+  is skipped, the header rephrases to "(thought)", and it stays in the
+  chronological thread instead of fading. Still dismissible with `×`.
+- **Stop / Mute control during voice playback.** Panel's existing Stop
+  button now also appears when audio is still playing post-stream (label
+  shifts to "Mute"). New "Stop Voice" item in the tray menu kills TTS audio
+  from anywhere. Both paths route through the existing `cancelVoice`.
+- **`Stop Voice` in tray menu** so you can interrupt without going through
+  the chat panel.
+
+### Changed
+
+- **Idle thoughts interleave by timestamp** instead of always rendering at
+  the bottom of the thread. When you reply to a chat that has an open idle
+  thought, new turns now slot in *below* the thought instead of pushing it
+  to the floor. Items render in chronological order (turn.timestamp vs
+  thought.emittedAt).
+- **Speaking-gesture palettes trimmed for short durations.** `Hearing_*`
+  (4s each), `Process`/`Processing` (5-6s), `Reading` (9.7s) were causing
+  visible overhang past the end of audio — the cycle would fire one near
+  the audio's tail and the gesture would linger 3-9 seconds. All 8 mood
+  palettes now favor short anims (`Explain` 0.6s, `Pleased` 0.5s, `Gesture*`
+  0.5s, `Acknowledge` 0.75s), with at most one `Hearing_*` per palette as a
+  flavor option.
+- **Thinking cycle trimmed** from 10 anims to 3 short variants (`Think`
+  0.8s, `Read` 2.5s, `Write` 3.2s). The `ing` variants (`Thinking` 7.4s,
+  `Processing` 5.2s, `Reading` 9.7s) were outlasting the cycle interval and
+  piling up in the queue, then continuing to play after `chatEnd`.
+- **Hard-stops at chat lifecycle transitions** for crisp endings.
+  `chatFirstReply`, `chatEnd`, and `chatAborted` now call `interruptCurrent()`
+  before transitioning — cuts off any in-flight thinking/speaking gesture
+  via `agent.stop()` so nothing overhangs past the moment Merlin should be
+  idle. Previously the last-queued gesture would play its full ~2-3s past
+  the actual end of audio.
+- **ElevenLabs error notifications** are now non-silent and carry a status-
+  specific hint:
+  - `402` → "ElevenLabs free tier doesn't allow API access to Voice Library
+    voices. Use a built-in voice or upgrade your plan."
+  - `401`/`403` → "API key invalid or lacks permission for this voice."
+  - `404` → "Voice ID not found. Add it from the Voice Library to your
+    account first."
+  - `422`/`400` → "Voice may not be in your account, or this model isn't
+    supported for it."
+  Plus the full API response body is logged at warn level for inspection.
+- **Brain musings respect the agent-busy state.** Both `maybeWander` and
+  `maybeIdleThought` now check `getIntent()` via an async-import of the
+  animation controller (to avoid the circular dep) and skip the tick
+  entirely while Merlin is `thinking`, `speaking`, or `doing`. No more
+  thoughts popping into the panel mid-response.
+- **`chatEnd` calls `markInteraction()`** so the brain's 90s idle countdown
+  restarts from when the response actually finished, not when the user
+  submitted (which could've been 60+ seconds earlier for long Hermes
+  tool-using turns). Prevents idle thoughts from firing immediately after a
+  long reply.
+
+### Fixed
+
+- **Settings checkbox-row labels** were clipped into vertical wraps by the
+  `.row label { flex: 0 0 90px }` rule (the wider checkbox descriptions
+  like "Idle thoughts (occasional unprompted remarks)" don't fit in 90px).
+  Added a `:has(input[type="checkbox"])` selector that lets those labels
+  take full row width.
+- **`MoveUp` halo animation now visibly plays during drag.** Diagnosed via
+  the new audio-state logging path: the actual fix was switching from the
+  graceful-exit-branch `agent.stop()` to a direct animator switch
+  (`hardSwitchTo`) that bypasses clippyjs's internal queue entirely. (This
+  was in `0.2.0` but is mentioned again because the supporting `0.3.0`
+  diagnostics let us actually confirm it works end-to-end.)
+- **`programmatic()` no-op skip** — covered in the `0.2.0` notes but
+  extended here to the smooth-move bubble + panel paths too.
+
+---
+
 ## [0.2.0] — 2026-05-17
 
 Post-`0.1.0` polish, refactors, and feature work. Headline items: the modern
@@ -252,6 +356,7 @@ to <https://github.com/therealgorgan/merlin-the-wizard>.
 - `docs/integrating-hermes.md` (scrubbed of any private IPs/tokens)
 - Public GitHub repo at <https://github.com/therealgorgan/merlin-the-wizard>
 
-[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/therealgorgan/merlin-the-wizard/releases/tag/v0.1.0

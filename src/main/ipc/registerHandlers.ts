@@ -49,9 +49,13 @@ import {
 } from '../windows/chatPanelWindow';
 import { getActiveSpriteHost } from '../activeSurface';
 import { loadHistory, getHistorySnapshot } from '../storage/conversationStore';
+import { registerAudioStateIpc } from '../voice/audioState';
 import { logger } from '../logger';
 
 export function registerIpcHandlers(): void {
+  // Renderer-side audio-queue state updates feed the speaking-cycle gate.
+  registerAudioStateIpc();
+
   ipcMain.handle(IPC.spritePlay, async (_e, name: string) => {
     if (!isAnimationName(name)) {
       logger.warn('Rejecting unknown animation', name);

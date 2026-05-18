@@ -37,8 +37,24 @@ function isIdle(): boolean {
   return Date.now() - lastInteractionAt >= IDLE_AFTER_MS;
 }
 
+/** Whether Merlin is actively working on a turn (thinking / responding / */
+/** running a tool). Brain musings + wanders must wait until he's done — */
+/** otherwise an idle thought can pop up while the LLM is still streaming */
+/** the user's last reply, which is jarring. Async-import to avoid a circular */
+/** module dependency between brain.ts and animationController.ts. */
+async function isAgentBusy(): Promise<boolean> {
+  try {
+    const { getIntent } = await import('./animationController');
+    const intent = getIntent();
+    return intent === 'thinking' || intent === 'speaking' || intent === 'doing';
+  } catch {
+    return false;
+  }
+}
+
 async function maybeWander(): Promise<void> {
   if (isActing) return;
+  if (await isAgentBusy()) return;
   const w = getSpriteWindow();
   if (!w || !w.isVisible()) return;
   // If the bubble is showing, don't wander — bubble would have to chase.
@@ -133,6 +149,11 @@ let lastEmittedThoughtId: string | null = null;
 
 async function maybeIdleThought(): Promise<void> {
   if (isActing) return;
+  // Don't fire while a chat is in flight — Merlin in the middle of thinking,
+  // responding, or running a tool should not also pop a tangential musing
+  // into the panel. The brain tick runs every 60s independently of the chat
+  // state, so this guard is the only thing that prevents overlap.
+  if (await isAgentBusy()) return;
   const now = Date.now();
   if (now - lastThoughtAt < IDLE_THOUGHT_MIN_GAP_MS) return;
   const settings = await readStore();

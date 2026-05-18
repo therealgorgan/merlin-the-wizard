@@ -7,6 +7,7 @@ import { getSecret } from '../storage/secrets';
 import { logger } from '../logger';
 import { synthesizeSapi } from './sapi';
 import { synthesizeEdge, DEFAULT_EDGE_VOICE } from './edge';
+import { synthesizeElevenLabs, DEFAULT_ELEVENLABS_VOICE } from './elevenlabs';
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/audio/speech';
 const GROQ_MODEL = 'canopylabs/orpheus-v1-english';
@@ -31,13 +32,14 @@ export const OR_VOICES = [
 type ORVoice = (typeof OR_VOICES)[number];
 const DEFAULT_OR_VOICE: ORVoice = 'onyx';
 
-export type VoiceEngine = 'off' | 'sapi' | 'groq' | 'openrouter' | 'edge';
+export type VoiceEngine = 'off' | 'sapi' | 'groq' | 'openrouter' | 'edge' | 'elevenlabs';
 export const VOICE_ENGINES: readonly VoiceEngine[] = [
   'off',
   'sapi',
   'groq',
   'openrouter',
   'edge',
+  'elevenlabs',
 ] as const;
 
 function normalizeGroqVoice(v: string | null | undefined): GroqVoice {
@@ -79,6 +81,10 @@ export async function isOpenRouterConfigured(): Promise<boolean> {
   return Boolean(await getSecret('openrouter_api_key'));
 }
 
+export async function isElevenLabsConfigured(): Promise<boolean> {
+  return Boolean(await getSecret('elevenlabs_api_key'));
+}
+
 export function cancelVoice(): void {
   sessionId++;
   queue = [];
@@ -89,6 +95,29 @@ export function cancelVoice(): void {
   void getActiveSpriteHost().then((w) => {
     w?.webContents.send(IPC.spriteStopAudio);
   });
+  // Renderer's onStopAudio handler will report active=false too, but mark
+  // here as well so any voice-idle waiters resolve immediately on cancel.
+  void import('./audioState').then(({ markVoiceIdle }) => markVoiceIdle());
+}
+
+/** Whether the TTS synthesis queue has work pending (or is mid-flight). */
+/** Combined with the renderer's audio-playback state, lets the caller wait */
+/** for *everything* — synthesis + playback — to finish before treating the */
+/** turn as fully over. */
+export function isSynthQueueActive(): boolean {
+  return queue.length > 0 || pumping;
+}
+
+/** Resolve when the synthesis queue is empty AND not currently pumping. */
+/** Polls with a small interval since there's no native event to subscribe to. */
+/** Times out after `timeoutMs` to avoid hanging if the synth backend stalls. */
+export async function waitForSynthDrain(timeoutMs = 60_000): Promise<void> {
+  if (!isSynthQueueActive()) return;
+  const start = Date.now();
+  while (isSynthQueueActive()) {
+    if (Date.now() - start > timeoutMs) return;
+    await new Promise<void>((r) => setTimeout(r, 100));
+  }
 }
 
 /**
@@ -157,6 +186,10 @@ export async function speak(sentence: string): Promise<void> {
   }
   if (engine === 'openrouter' && !(await isOpenRouterConfigured())) {
     logger.warn('speak: openrouter selected but no API key saved');
+    return;
+  }
+  if (engine === 'elevenlabs' && !(await isElevenLabsConfigured())) {
+    logger.warn('speak: elevenlabs selected but no API key saved');
     return;
   }
   // 'edge' has no key requirement — it's Microsoft's public TTS service.
@@ -240,6 +273,19 @@ async function synthesizeForCurrentEngine(text: string): Promise<SynthResult | n
     const ab = new ArrayBuffer(buf.byteLength);
     new Uint8Array(ab).set(buf);
     return { data: ab, mime: 'audio/mpeg' };
+  }
+  if (settings.voiceEngine === 'elevenlabs') {
+    const key = await getSecret('elevenlabs_api_key');
+    if (!key) return null;
+    const voiceId = settings.voiceName?.trim() || DEFAULT_ELEVENLABS_VOICE;
+    const abort = new AbortController();
+    currentAbort = abort;
+    try {
+      const data = await synthesizeElevenLabs(text, voiceId, key, abort.signal);
+      return data ? { data, mime: 'audio/mpeg' } : null;
+    } finally {
+      if (currentAbort === abort) currentAbort = null;
+    }
   }
   return null;
 }
