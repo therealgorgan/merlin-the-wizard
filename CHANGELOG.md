@@ -13,6 +13,20 @@ Nothing yet.
 
 ---
 
+## [0.3.1] — 2026-05-17
+
+Hotfix: tray menu was missing the ElevenLabs option added in `0.3.0`.
+
+### Fixed
+
+- **Right-click → Voice submenu** now includes ElevenLabs alongside the
+  other engines. Shows as disabled with "(no API key — set in Settings)"
+  when no key is saved; enabled radio option when the key is present. The
+  status line at the top of the tray menu also correctly reads
+  "Voice: ElevenLabs" when that engine is selected.
+
+---
+
 ## [0.3.0] — 2026-05-17
 
 Same-day follow-up to `0.2.0`. Headline items: a new **ElevenLabs** TTS engine
@@ -356,7 +370,8 @@ to <https://github.com/therealgorgan/merlin-the-wizard>.
 - `docs/integrating-hermes.md` (scrubbed of any private IPs/tokens)
 - Public GitHub repo at <https://github.com/therealgorgan/merlin-the-wizard>
 
-[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/therealgorgan/merlin-the-wizard/releases/tag/v0.1.0

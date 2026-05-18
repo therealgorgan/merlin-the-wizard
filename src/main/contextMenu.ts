@@ -50,18 +50,22 @@ export interface MerlinMenuActions {
 }
 
 export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu> {
-  const [currentZoom, muted, mood, voiceEngine, tasks, llmLabel, charId, autoStart, settings] =
-    await Promise.all([
-      getZoom(),
-      getMuteSounds(),
-      getMood(),
-      getVoiceEngine(),
-      listTasks({ includeCompleted: false }),
-      currentProviderLabel(),
-      getCharacterId(),
-      getAutoStart(),
-      readStore(),
-    ]);
+  const { hasSecret } = await import('./storage/secrets');
+  const [
+    currentZoom, muted, mood, voiceEngine, tasks, llmLabel, charId, autoStart, settings,
+    elevenLabsConfigured,
+  ] = await Promise.all([
+    getZoom(),
+    getMuteSounds(),
+    getMood(),
+    getVoiceEngine(),
+    listTasks({ includeCompleted: false }),
+    currentProviderLabel(),
+    getCharacterId(),
+    getAutoStart(),
+    readStore(),
+    hasSecret('elevenlabs_api_key'),
+  ]);
 
   // Hermes profile quick-switcher — only shown when Hermes is the active
   // provider. Uses the cached list so the menu opens instantly; users refresh
@@ -198,6 +202,19 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
         await actions.onVoiceChange?.();
       },
     },
+    {
+      label: elevenLabsConfigured
+        ? 'ElevenLabs (cloud, separate key)'
+        : 'ElevenLabs (no API key — set in Settings)',
+      type: 'radio',
+      checked: voiceEngine === 'elevenlabs',
+      enabled: elevenLabsConfigured,
+      click: async () => {
+        cancelVoice();
+        await setVoiceEngine('elevenlabs');
+        await actions.onVoiceChange?.();
+      },
+    },
   ];
 
   const sizeSubmenu: MenuItemConstructorOptions[] = ZOOM_PRESETS.map((z) => ({
@@ -221,7 +238,9 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
           ? 'Voice: OpenRouter TTS'
           : voiceEngine === 'edge'
             ? 'Voice: Edge Neural'
-            : 'Voice: Off';
+            : voiceEngine === 'elevenlabs'
+              ? 'Voice: ElevenLabs'
+              : 'Voice: Off';
 
   return Menu.buildFromTemplate([
     { label: aiStatus, enabled: false },
