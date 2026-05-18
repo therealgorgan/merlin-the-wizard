@@ -4,9 +4,14 @@ import {
   smoothMoveSpriteTo,
 } from './windows/spriteWindow';
 import { getBubbleWindow, showBubble } from './windows/bubbleWindow';
+import {
+  getChatPanelWindow,
+  panelAddIdleThought,
+} from './windows/chatPanelWindow';
 import { read as readStore } from './storage/store';
 import { listTasks } from './tasks';
 import { logger } from './logger';
+import type { PanelIdleThought } from '@shared/ipc-contract';
 
 // Merlin's autonomous behavior loop. Runs every TICK_MS and may decide to do
 // something — wander, idle pose, etc. — when the user is NOT actively chatting.
@@ -14,8 +19,8 @@ import { logger } from './logger';
 const TICK_MS = 60_000; // 1 minute
 const IDLE_AFTER_MS = 90_000; // last interaction must be older than this
 const WANDER_CHANCE = 0.18; // probability per tick when idle
-const IDLE_THOUGHT_CHANCE = 0.06; // ~once per 16 idle ticks (~quarter hour)
-const IDLE_THOUGHT_MIN_GAP_MS = 25 * 60_000; // never more than once per ~25 min
+const IDLE_THOUGHT_CHANCE = 0.12; // ~once per ~8 idle ticks
+const IDLE_THOUGHT_MIN_GAP_MS = 5 * 60_000; // never more than once per 5 min
 let lastThoughtAt = 0;
 
 let lastInteractionAt = Date.now();
@@ -120,28 +125,64 @@ async function pickIdleThought(): Promise<string | null> {
   return pool[Math.floor(Math.random() * pool.length)] ?? null;
 }
 
+// Modern-mode idle thoughts auto-expire in the chat panel after this TTL.
+// 2 minutes is long enough to glance over, walk away briefly, come back and
+// still engage with the thought before it disappears.
+const PANEL_IDLE_THOUGHT_TTL_MS = 120_000;
+let lastEmittedThoughtId: string | null = null;
+
 async function maybeIdleThought(): Promise<void> {
   if (isActing) return;
   const now = Date.now();
   if (now - lastThoughtAt < IDLE_THOUGHT_MIN_GAP_MS) return;
   const settings = await readStore();
   if (!settings.idleThoughtsEnabled) return;
-  // Skip if bubble is already open — don't interrupt.
-  const bubble = getBubbleWindow();
-  if (bubble && bubble.isVisible()) return;
   const sprite = getSpriteWindow();
   if (!sprite || !sprite.isVisible()) return;
   const text = await pickIdleThought();
   if (!text) return;
   lastThoughtAt = now;
-  logger.debug('brain: idle thought');
   // Route through the AnimationController so it knows we're temporarily
   // 'reacting' (prevents it from firing speaking-cycle gestures over the top).
   const { nudgeForIdleThought } = await import('./animationController');
   nudgeForIdleThought();
+
+  if (settings.displayMode === 'modern') {
+    // Modern mode: append a transient "thought" turn into the panel thread
+    // with a visible countdown timer. The panel auto-removes when TTL
+    // expires — no follow-up needed here. Skip if panel isn't visible yet.
+    const panel = getChatPanelWindow();
+    if (!panel || !panel.isVisible()) return;
+    const thought: PanelIdleThought = {
+      id: `idle-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      text,
+      emittedAt: now,
+      ttlMs: PANEL_IDLE_THOUGHT_TTL_MS,
+    };
+    lastEmittedThoughtId = thought.id;
+    logger.debug('brain: idle thought → panel', { id: thought.id });
+    setTimeout(() => panelAddIdleThought(thought), 700);
+    return;
+  }
+
+  // Classic mode: speech bubble. Skip if a bubble is already open.
+  const bubble = getBubbleWindow();
+  if (bubble && bubble.isVisible()) return;
+  logger.debug('brain: idle thought → bubble');
   setTimeout(() => {
     showBubble(text, { mode: 'read', durationMs: 9_000 });
   }, 700);
+}
+
+/** Called from the panel-dismiss IPC. Ensures we don't immediately fire */
+/** another thought after the user dismissed the previous one. The cooldown */
+/** (IDLE_THOUGHT_MIN_GAP_MS) already enforces ~25 min between thoughts, */
+/** so this hook is mostly a noop on the timing — but we use it to clear */
+/** the in-flight thought ID so we know the user engaged. */
+export function noteIdleThoughtDismissed(id: string): void {
+  if (lastEmittedThoughtId === id) {
+    lastEmittedThoughtId = null;
+  }
 }
 
 async function tick(): Promise<void> {

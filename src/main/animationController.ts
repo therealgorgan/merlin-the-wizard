@@ -1,6 +1,6 @@
 import { screen } from 'electron';
 import { IPC } from '@shared/ipc-contract';
-import { isAnimationName, type AnimationName } from '@shared/animations';
+import { IDLE_ANIMATIONS, isAnimationName, type AnimationName } from '@shared/animations';
 import {
   getSpriteWindow,
   hideMerlinWithAnimation,
@@ -53,27 +53,32 @@ function timeOfDay(d: Date = new Date()): TimeOfDay {
 let energy = 70; // 0-100, starts moderate
 let lastEnergyUpdate = Date.now();
 let sleepStartedAt = 0;
+// Floor so Merlin never goes fully drained — at very low energy he'd look
+// catatonic, picking only the sleepy palette indefinitely. 20 is "tired but
+// still responsive."
+const ENERGY_MIN = 20;
 
 function decayEnergy(): void {
   const now = Date.now();
   const minutes = (now - lastEnergyUpdate) / 60_000;
   lastEnergyUpdate = now;
   if (minutes <= 0) return;
-  // Base decay: 1 energy per minute idle.
-  let drain = minutes;
-  // Late night (22:00–6:00) drains 2x faster.
+  // Base decay: 0.5 energy per minute idle. Slower than before so a few
+  // hours away from the keyboard doesn't leave Merlin at zero next time
+  // the user comes back.
+  let drain = minutes * 0.5;
+  // Late night (22:00–6:00) drains 1.4x faster (was 2x — too aggressive).
   const tod = timeOfDay();
-  if (tod === 'night') drain *= 2;
+  if (tod === 'night') drain *= 1.4;
   // While actually sleeping, restore (Merlin "rests up").
   if (intent === 'sleeping' && sleepStartedAt > 0) {
     const sleptMinutes = (now - sleepStartedAt) / 60_000;
     if (sleptMinutes > 5) {
-      // Long sleep restores energy toward a comfortable level.
-      energy = Math.max(energy, Math.min(80, 50 + sleptMinutes * 2));
+      energy = Math.max(energy, Math.min(85, 55 + sleptMinutes * 2));
     }
     return; // don't drain while sleeping
   }
-  energy = Math.max(0, energy - drain);
+  energy = Math.max(ENERGY_MIN, energy - drain);
 }
 
 function gainEnergy(amount: number): void {
@@ -233,11 +238,14 @@ const PALETTES: Record<Mood, MoodPalette> = {
     confusion: ['Confused', 'Sad'],
   },
   sleepy: {
-    fidget: ['LookDownBlink', 'RestPose', 'Idle1_1', 'Idle2_1'],
-    speaking: ['Hearing_1', 'Hearing_3', 'RestPose'],
+    // No RestPose anywhere — it's the static "sleep pose" reserved for the
+    // sleep timer fire. Using it as a fidget made Merlin look like he was
+    // dozing off mid-interaction. Picked calmer Look/Idle gestures instead.
+    fidget: ['LookDownBlink', 'LookDown', 'Idle1_1', 'Idle2_1', 'Blink'],
+    speaking: ['Hearing_1', 'Hearing_3', 'Hearing_4'],
     wake: ['LookUp', 'Acknowledge'],
     success: ['Pleased', 'Acknowledge'],
-    failure: ['Confused', 'RestPose'],
+    failure: ['Confused', 'LookDown'],
     thank: ['Acknowledge', 'Pleased'],
     surprise: ['Surprised', 'LookUp'],
     confusion: ['Confused', 'Uncertain'],
@@ -266,27 +274,33 @@ const PALETTES: Record<Mood, MoodPalette> = {
 
 async function palette(): Promise<MoodPalette> {
   const m = await getMood();
-  // Time-of-day override: at night and at low energy, even cheerful Merlin
-  // tilts toward the sleepy palette. The "true" mood still wins overall, but
-  // calmer animations get added to each candidate set so the random pick
-  // skews quieter.
+  // Mood-driven base palette. Time-of-day + energy can TILT picks toward
+  // calmer or peppier gestures, but only at clear thresholds so the moods
+  // don't all blur into "sleepy" after a few hours of idle.
   let base = PALETTES[m] ?? PALETTES.cheerful;
   const tod = timeOfDay();
-  const lowEnergy = energy < 30;
-  if (tod === 'night' || lowEnergy) {
+  const veryLowEnergy = energy < 35;
+  const highEnergy = energy >= 70;
+  const lateNight = tod === 'night';
+
+  // Only inject sleepy gestures when BOTH conditions hit (low energy AND late
+  // night) — single condition alone isn't enough to override Merlin's actual
+  // mood. Prevents the "sleepy fidgets all morning because he didn't sleep"
+  // problem and the "sleepy fidgets right after interaction" problem.
+  if (veryLowEnergy && lateNight) {
     const sleepy = PALETTES.sleepy;
     base = {
       fidget: [...base.fidget, ...sleepy.fidget],
       speaking: [...base.speaking, ...sleepy.speaking],
-      wake: base.wake, // wake should still pop
+      wake: base.wake,
       success: base.success,
       failure: base.failure,
       thank: base.thank,
       surprise: base.surprise,
       confusion: base.confusion,
     };
-  } else if (tod === 'morning' && energy > 70) {
-    // High-energy mornings: tilt toward the cheerful palette for extra pep.
+  } else if (tod === 'morning' && highEnergy) {
+    // High-energy mornings: tilt toward cheerful for extra pep.
     const peppy = PALETTES.cheerful;
     base = {
       fidget: [...base.fidget, ...peppy.fidget],
@@ -332,6 +346,50 @@ function scheduleNextSpeakingGesture(): void {
   }, ms);
 }
 
+// ── Thinking gesture cycle (while LLM is generating) ─────────────────────────
+//
+// Long LLM turns (especially Hermes tool-using flows) can take 10-30s. Without
+// a cycle, Merlin fires Think once at chatStart and then just stands there
+// looking blank for the rest of the wait. The cycle re-fires a thinking-flavor
+// animation every 3-6s so the user has constant feedback that something is
+// actually happening.
+
+const THINKING_ANIMATIONS: readonly AnimationName[] = [
+  'Think',
+  'Thinking',
+  'Process',
+  'Processing',
+  'Read',
+  'Reading',
+  'Write',
+  'Writing',
+  'Search',
+  'Searching',
+];
+
+let thinkingTimer: NodeJS.Timeout | null = null;
+const THINKING_GESTURE_MIN_MS = 3_000;
+const THINKING_GESTURE_MAX_MS = 5_500;
+
+function clearThinkingTimer(): void {
+  if (thinkingTimer) {
+    clearTimeout(thinkingTimer);
+    thinkingTimer = null;
+  }
+}
+
+function scheduleNextThinkingGesture(): void {
+  clearThinkingTimer();
+  const ms = THINKING_GESTURE_MIN_MS + Math.random() * (THINKING_GESTURE_MAX_MS - THINKING_GESTURE_MIN_MS);
+  thinkingTimer = setTimeout(() => {
+    thinkingTimer = null;
+    if (intent !== 'thinking') return;
+    const pick = pickAnim(THINKING_ANIMATIONS);
+    if (pick) send(pick, { important: true });
+    scheduleNextThinkingGesture();
+  }, ms);
+}
+
 // ── Sleep / wake ─────────────────────────────────────────────────────────────
 
 let sleepTimer: NodeJS.Timeout | null = null;
@@ -351,8 +409,8 @@ function armSleepTimer(): void {
     sleepTimer = null;
     if (intent !== 'idle') return;
     logger.debug('AnimationController: drifting to sleep (energy=', getEnergy(), ')');
-    intent = 'sleeping';
     sleepStartedAt = Date.now();
+    setIntent('sleeping', 'sleep timer fired');
     send('RestPose', { important: true });
   }, SLEEP_AFTER_MS);
 }
@@ -362,31 +420,90 @@ async function wakeIfSleeping(): Promise<void> {
   if (intent !== 'sleeping') return;
   decayEnergy();
   sleepStartedAt = 0;
-  gainEnergy(10);
+  gainEnergy(15);
   logger.debug('AnimationController: waking from sleep (energy=', getEnergy(), ')');
-  intent = 'reacting';
   const pal = await palette();
   const pick = pickAnim(pal.wake) ?? 'Greet';
+  setIntent('reacting', 'waking from sleep');
   send(pick, { important: true });
-  setTimeout(() => {
-    if (intent === 'reacting') {
-      intent = 'idle';
-      armSleepTimer();
-      scheduleNextEyeCheck();
-    }
-  }, 1500);
+  scheduleReactionFinish(1800);
 }
 
 // Mark any reactive event as "interaction happened" — resets sleep timer,
-// credits a bit of energy, and wakes from sleep if needed.
+// credits energy, and wakes from sleep if needed.
 function touchInteraction(): void {
   clearSleepTimer();
-  gainEnergy(5);
+  gainEnergy(15);
   if (intent === 'sleeping') {
     void wakeIfSleeping();
     return;
   }
-  if (intent === 'idle') armSleepTimer();
+  // setIntent('idle', ...) below in callers will re-arm sleep; here we just
+  // make sure the timer doesn't run from a stale armed state.
+}
+
+// ── Intent state machine ────────────────────────────────────────────────────
+//
+// All intent transitions go through setIntent so timer management is
+// guaranteed consistent. Every reactive state schedules its own return-to-
+// idle (scheduleReactionFinish) AND we have a safety-net periodic check that
+// forces idle if 'reacting' lingers too long — that catches missed timeouts
+// and orphan reactions that used to freeze the whole controller.
+
+let reactingStartedAt = 0;
+let reactionFinishTimer: NodeJS.Timeout | null = null;
+const REACTING_SAFETY_NET_MS = 5_000;
+
+function clearReactionFinishTimer(): void {
+  if (reactionFinishTimer) {
+    clearTimeout(reactionFinishTimer);
+    reactionFinishTimer = null;
+  }
+}
+
+/** Schedule an automatic return from 'reacting' to 'idle' after `ms`. Cancels
+ *  any previously-scheduled return so chained reactions don't fight. */
+function scheduleReactionFinish(ms: number): void {
+  clearReactionFinishTimer();
+  reactionFinishTimer = setTimeout(() => {
+    reactionFinishTimer = null;
+    if (intent === 'reacting') {
+      setIntent('idle', 'reaction finished');
+    }
+  }, ms);
+}
+
+/** Central intent transition. Logs, manages sleep/eye/reaction/cycle timers,
+ *  and enforces invariants. Use this everywhere — never mutate `intent`
+ *  directly. */
+function setIntent(next: Intent, reason: string): void {
+  if (next === intent) return;
+  const prev = intent;
+  intent = next;
+  logger.debug(`AnimationController: ${prev} → ${next} (${reason})`);
+
+  // Reaction-finish timer is per-reacting-stint. Clear unconditionally and
+  // re-arm only if entering reacting.
+  clearReactionFinishTimer();
+  // Cycle timers belong to their owning state — clear when leaving so a
+  // stray tick doesn't fire after the state changed.
+  if (prev === 'thinking' && next !== 'thinking') clearThinkingTimer();
+  if (prev === 'speaking' && next !== 'speaking') clearSpeakingTimer();
+
+  if (next === 'reacting') {
+    reactingStartedAt = Date.now();
+    // Eye tracking + sleep both off during reacting (callers re-arm on exit).
+    clearSleepTimer();
+  } else if (next === 'idle') {
+    armSleepTimer();
+    scheduleNextEyeCheck();
+  } else if (next === 'sleeping' || next === 'hidden') {
+    clearSleepTimer();
+    clearEyeTimer();
+  } else if (next === 'thinking' || next === 'speaking' || next === 'doing') {
+    clearSleepTimer();
+    clearEyeTimer();
+  }
 }
 
 // ── Eye-tracking ─────────────────────────────────────────────────────────────
@@ -446,21 +563,25 @@ function tickEyeTracking(): void {
   send(look);
 }
 
-// ── Drag-direction detection ─────────────────────────────────────────────────
+// ── Drag detection ──────────────────────────────────────────────────────────
 //
 // Per-frame drag deltas come in via IPC.windowDrag. We accumulate them and
-// fire a directional Move* animation when the user has dragged "enough"
-// in some direction, with cooldown so we don't spam.
+// fire the copter-hat idle (Idle3_2) once we've moved enough to know this is
+// a real drag, not a misclick. The drag heartbeat in registerHandlers re-fires
+// the same animation so it keeps playing for the duration of the drag.
+// Idle3_2 is non-directional (Merlin's copter-hat appears, no L/R/U/D lean),
+// so the visual is consistent regardless of which way the user is dragging.
 
 let dragAccumDx = 0;
 let dragAccumDy = 0;
-let dragLastDirection: 'L' | 'R' | 'U' | 'D' | null = null;
-let dragLastAnimAt = 0;
-const DRAG_DIRECTION_THRESHOLD_PX = 80;
-// A Merlin Move* animation is ~2-3s. Don't queue another one within that
-// window even on direction change — otherwise a brief zigzag fills the queue
-// and Merlin keeps playing Move* for 10+ seconds after the drag ends.
-const DRAG_MIN_GAP_MS = 2500;
+let dragAnimStarted = false;
+const DRAG_START_THRESHOLD_PX = 6;
+// MoveUp is the copter-hat-glides-upward animation — the cleanest "Merlin is
+// in transit" look across the four directional Move* sprites. We use it
+// regardless of drag direction because clippyjs's directional Move* sprites
+// don't read well when the actual motion is driven by the user's hand: the
+// copter-hat alone signals "being carried" and the user's drag does the rest.
+const DRAG_ANIMATION: AnimationName = 'MoveUp';
 
 function resetDragAccum(): void {
   dragAccumDx = 0;
@@ -469,8 +590,7 @@ function resetDragAccum(): void {
 
 function resetDragSession(): void {
   resetDragAccum();
-  dragLastDirection = null;
-  dragLastAnimAt = 0;
+  dragAnimStarted = false;
 }
 
 // ── Public API: USER-INITIATED REACTIONS ────────────────────────────────────
@@ -479,13 +599,36 @@ export function getIntent(): Intent {
   return intent;
 }
 
-/** Double-click. Pleased fidget, then ask bubble opens via caller. */
+// Playful pool for double-click — variety so it doesn't feel repetitive
+// across repeated double-clicks. pickAnim biases away from the most recent
+// few picks via the shared ring buffer, so back-to-back double-clicks
+// actually look different.
+const DOUBLE_CLICK_ANIMATIONS: readonly AnimationName[] = [
+  'Pleased',
+  'Wave',
+  'Greet',
+  'Surprised',
+  'Acknowledge',
+  'GestureRight',
+  'GestureLeft',
+  'Congratulate',
+  'Congratulate_2',
+  'DoMagic1',
+  'DoMagic2',
+  'GetAttention',
+  'Alert',
+];
+
+/** Double-click. Picks a random fun gesture, then the caller usually opens */
+/** the ask bubble/panel. */
 export function reactToDoubleClick(): void {
   if (intent === 'hidden') return;
   touchInteraction();
-  if (intent === 'sleeping') return; // wakeIfSleeping handles the gesture
-  intent = 'reacting';
-  send('Pleased', { important: true });
+  if (intent === 'sleeping') return; // wakeIfSleeping handles the gesture + return-to-idle
+  setIntent('reacting', 'double-click');
+  const pick = pickAnim(DOUBLE_CLICK_ANIMATIONS) ?? 'Pleased';
+  send(pick, { important: true });
+  scheduleReactionFinish(1800);
 }
 
 /** Right-click. Acknowledge (the tray menu will pop up anyway). */
@@ -494,8 +637,9 @@ export function reactToRightClick(): void {
   touchInteraction();
   if (intent === 'sleeping') return;
   if (intent === 'idle' || intent === 'reacting') {
-    intent = 'reacting';
+    setIntent('reacting', 'right-click');
     send('Acknowledge', { important: true });
+    scheduleReactionFinish(1500);
   }
 }
 
@@ -510,76 +654,57 @@ export function reactToDragStart(): void {
   touchInteraction();
   if (intent === 'thinking' || intent === 'speaking' || intent === 'doing') return;
   resetDragSession();
-  intent = 'reacting';
+  setIntent('reacting', 'drag-start');
   lastSendAt = 0; // reset send-throttle without sending a stop IPC
+  // Drag can run arbitrarily long — the safety-net will still kick in if the
+  // drag-end IPC is somehow missed (renderer crash mid-drag). The IPC layer
+  // also has its own 6s safety timer for that case.
 }
 
-/** Per-frame drag delta. Fires a Move* animation as soon as the drag has a */
-/** detectable direction (~12px on first fire of a session, ~80px for */
-/** subsequent direction changes within the same drag) so the animation */
-/** begins AS THE USER STARTS DRAGGING, not after they let go. Repeat-fires */
-/** are gated by direction change + a 2.5s minimum gap so the queue doesn't */
-/** pile up. */
+/** Per-frame drag delta. Fires the copter-hat idle (Idle3_2) on the very */
+/** first detectable drag movement (~6px accumulated) so the animation begins */
+/** AS THE USER STARTS DRAGGING, not after they let go. Subsequent ticks just */
+/** accumulate deltas without re-firing — the drag heartbeat handles repeats */
+/** if the user holds without moving. */
 export function reactToDrag(dx: number, dy: number): void {
   if (intent === 'hidden') return;
-  // Drags during chat lifecycle don't get directional animations — Merlin's
-  // already busy. The user is just repositioning him out of the way.
+  // Drags during chat lifecycle don't get a drag animation — Merlin's already
+  // busy. The user is just repositioning him out of the way.
   if (intent === 'thinking' || intent === 'speaking' || intent === 'doing') return;
   dragAccumDx += dx;
   dragAccumDy += dy;
-
-  // First Move* of this drag session uses a tiny threshold (just enough to
-  // pick a direction without being noise) so the animation starts on the
-  // first or second drag delta. Subsequent direction changes need the larger
-  // threshold so tiny wobbles don't switch animations mid-drag.
-  const isFirstFire = dragLastDirection === null;
-  const threshold = isFirstFire ? 6 : DRAG_DIRECTION_THRESHOLD_PX;
-  const mag = Math.hypot(dragAccumDx, dragAccumDy);
-  if (mag < threshold) return;
-
-  // clippyjs Move* animations are inverted relative to drag direction —
-  // dragging Merlin RIGHT means he's being pulled to the right, and the
-  // matching gesture is "MoveLeft" (the trail-behind / lean-back look).
-  let dir: 'L' | 'R' | 'U' | 'D';
-  if (Math.abs(dragAccumDx) > Math.abs(dragAccumDy)) {
-    dir = dragAccumDx > 0 ? 'L' : 'R';
-  } else {
-    dir = dragAccumDy > 0 ? 'U' : 'D';
-  }
-  resetDragAccum();
-
-  // Same direction as we just fired? Don't queue another one — the current
-  // animation is still playing.
-  if (dir === dragLastDirection) return;
-
-  // Backstop: never queue Move* faster than the animation can play.
-  const now = Date.now();
-  if (now - dragLastAnimAt < DRAG_MIN_GAP_MS) return;
-  dragLastDirection = dir;
-  dragLastAnimAt = now;
-
-  const move: AnimationName = (
-    dir === 'L' ? 'MoveLeft'
-    : dir === 'R' ? 'MoveRight'
-    : dir === 'U' ? 'MoveUp'
-    : 'MoveDown'
-  );
-  send(move, { important: true });
+  if (dragAnimStarted) return;
+  if (Math.hypot(dragAccumDx, dragAccumDy) < DRAG_START_THRESHOLD_PX) return;
+  dragAnimStarted = true;
+  send(DRAG_ANIMATION, { important: true });
 }
 
-/** Drag finished. Cut off the in-flight Move* so Merlin returns to a clean */
-/** idle state immediately — otherwise the last-queued Move* keeps playing for */
-/** another 2-3s after the user has let go. */
+/** Drag finished. Let any in-flight MoveUp continue playing — interrupting */
+/** would discard the queued animation and the user would see nothing at */
+/** all. Schedule a calm idle gesture ~1.5s after release so Merlin visibly */
+/** returns to a resting pose once MoveUp has had time to play. */
 export function reactToDragEnd(): void {
   if (intent === 'hidden') return;
   resetDragSession();
   if (intent === 'reacting') {
-    intent = 'idle';
-    interruptCurrent();
-    armSleepTimer();
-    // ClippyController's natural idle scheduler will pick the next animation
-    // ~30-90s from now (or sooner on an eye-tracking tick).
+    setIntent('idle', 'drag-end');
+    setTimeout(() => {
+      if (intent !== 'idle') return;
+      const idle = pickAnim(IDLE_ANIMATIONS);
+      if (idle) send(idle);
+    }, 1500);
   }
+}
+
+/** Heartbeat tick: re-fire the copter-hat idle while the user is still */
+/** holding the sprite mid-drag (mouse held still). Without this, Idle3_2 */
+/** plays once (~10s) and ends, leaving the sprite static during a long held */
+/** drag. Skipped if the drag was too small to fire the initial animation. */
+export function repeatLastDragAnim(): void {
+  if (intent === 'hidden') return;
+  if (!dragAnimStarted) return;
+  if (intent === 'thinking' || intent === 'speaking' || intent === 'doing') return;
+  send(DRAG_ANIMATION, { important: true });
 }
 
 /** Mouse wheel zoom — playful Surprised reaction. */
@@ -588,22 +713,28 @@ export function reactToZoom(): void {
   touchInteraction();
   if (intent === 'sleeping') return;
   if (intent !== 'idle' && intent !== 'reacting') return;
-  intent = 'reacting';
+  setIntent('reacting', 'zoom');
   // Throttled: rapid wheel ticks would otherwise queue up Surprised's.
   send('Surprised');
+  scheduleReactionFinish(1500);
 }
 
 // ── Public API: CHAT LIFECYCLE ──────────────────────────────────────────────
 
 export function chatStart(): void {
   clearSpeakingTimer();
-  clearSleepTimer();
-  intent = 'thinking';
+  setIntent('thinking', 'chat-start');
+  // Fire Think immediately, then cycle thinking/reading/processing variants
+  // every 3-5.5s until the first reply chunk arrives (chatFirstReply will
+  // transition us to 'speaking', which cancels the thinking cycle via
+  // setIntent). For long LLM turns (especially tool-heavy Hermes flows)
+  // this keeps the user from staring at a frozen Merlin for 30+ seconds.
   send('Think', { important: true });
+  scheduleNextThinkingGesture();
 }
 
 export function chatFirstReply(): void {
-  intent = 'speaking';
+  setIntent('speaking', 'first-reply');
   send('Explain', { important: true });
   scheduleNextSpeakingGesture();
 }
@@ -611,15 +742,13 @@ export function chatFirstReply(): void {
 export function chatEnd(): void {
   clearSpeakingTimer();
   if (intent === 'hidden') return;
-  intent = 'idle';
-  armSleepTimer();
+  setIntent('idle', 'chat-end');
 }
 
 export function chatAborted(): void {
   clearSpeakingTimer();
   if (intent === 'hidden') return;
-  intent = 'idle';
-  armSleepTimer();
+  setIntent('idle', 'chat-aborted');
 }
 
 // ── Public API: TOOL EXECUTION ──────────────────────────────────────────────
@@ -681,17 +810,13 @@ export async function contentReaction(userText: string): Promise<void> {
 
 export async function setHidden(): Promise<void> {
   clearSpeakingTimer();
-  clearSleepTimer();
-  clearEyeTimer();
-  intent = 'hidden';
+  setIntent('hidden', 'hide');
   await hideMerlinWithAnimation();
 }
 
 export async function setVisible(): Promise<void> {
-  if (intent === 'hidden') intent = 'idle';
+  if (intent === 'hidden') setIntent('idle', 'show');
   await showMerlinWithAnimation();
-  scheduleNextEyeCheck();
-  armSleepTimer();
 }
 
 /** App lost focus — Merlin glances away (subtle, not always). */
@@ -699,9 +824,9 @@ export function reactToAppBlur(): void {
   if (intent !== 'idle') return;
   // 40% chance, modulated by energy — sleepy Merlin doesn't bother.
   if (Math.random() > 0.4 * energyFactor()) return;
-  intent = 'reacting';
+  setIntent('reacting', 'app-blur');
   send(Math.random() < 0.5 ? 'LookLeft' : 'LookRight');
-  setTimeout(() => { if (intent === 'reacting') intent = 'idle'; }, 1500);
+  scheduleReactionFinish(1500);
 }
 
 /** App regained focus — perk up. */
@@ -716,24 +841,19 @@ export async function reactToAppFocus(): Promise<void> {
   if (Math.random() > 0.3) return;
   const pal = await palette();
   const pick = pickAnim(pal.fidget) ?? 'Acknowledge';
-  intent = 'reacting';
+  setIntent('reacting', 'app-focus');
   send(pick);
-  setTimeout(() => { if (intent === 'reacting') intent = 'idle'; }, 1500);
+  scheduleReactionFinish(1500);
 }
 
 // ── Brain idle thought ──────────────────────────────────────────────────────
 
 export function nudgeForIdleThought(): void {
   if (intent !== 'idle') return;
-  intent = 'reacting';
+  setIntent('reacting', 'idle-thought-nudge');
   void wiggleSprite();
   send('GetAttention', { important: true });
-  setTimeout(() => {
-    if (intent === 'reacting') {
-      intent = 'idle';
-      armSleepTimer();
-    }
-  }, 1500);
+  scheduleReactionFinish(1800);
 }
 
 // ── LLM inline tag passthrough ──────────────────────────────────────────────
@@ -758,16 +878,31 @@ export function startProactiveBehaviors(): void {
   logger.info('AnimationController: proactive behaviors started');
 }
 
-// ── Debug ───────────────────────────────────────────────────────────────────
+// ── Debug + safety-net ──────────────────────────────────────────────────────
 
 export function debugState(): string {
-  return `intent=${intent} sleep=${sleepTimer ? 'armed' : 'off'} ` +
+  return `intent=${intent} energy=${getEnergy()} ` +
+    `sleep=${sleepTimer ? 'armed' : 'off'} ` +
     `eye=${eyeTimer ? 'armed' : 'off'} speaking=${speakingTimer ? 'on' : 'off'} ` +
     `recent=[${recentAnims.join(',')}]`;
 }
 
 let lastLoggedIntent: Intent = intent;
 setInterval(() => {
+  // Safety net: if intent has been 'reacting' for longer than the safety
+  // window, force it back to idle. Catches stuck states from missed
+  // setTimeouts, renderer crashes mid-reaction, or any reaction trigger
+  // that forgot to call scheduleReactionFinish.
+  if (
+    intent === 'reacting' &&
+    reactingStartedAt > 0 &&
+    Date.now() - reactingStartedAt > REACTING_SAFETY_NET_MS
+  ) {
+    logger.warn(
+      `AnimationController: safety-net forcing 'reacting' → 'idle' after ${REACTING_SAFETY_NET_MS}ms`,
+    );
+    setIntent('idle', 'safety-net');
+  }
   if (lastLoggedIntent !== intent) {
     logger.debug('AnimationController:', debugState());
     lastLoggedIntent = intent;

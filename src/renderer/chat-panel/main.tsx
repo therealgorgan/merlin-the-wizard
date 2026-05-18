@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { marked } from 'marked';
-import type { PanelChatTurn } from '@shared/ipc-contract';
+import type { PanelChatTurn, PanelIdleThought } from '@shared/ipc-contract';
 
 // The chat panel is JUST a chat surface in this design — the actual sprite
 // lives in its own floating window (the standalone sprite window) alongside
@@ -33,10 +33,40 @@ function App(): React.ReactElement {
     width: number; height: number; bytes: number;
   } | null>(null);
   const [recording, setRecording] = useState(false);
+  const [idleThoughts, setIdleThoughts] = useState<PanelIdleThought[]>([]);
+  // Re-render tick used to update countdown displays; bumped every second
+  // while at least one idle thought is visible.
+  const [, setTick] = useState(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+
+  // Tick once per second to refresh the countdown labels on idle thoughts, and
+  // drop any whose TTL has expired. Only runs while there's at least one
+  // thought to track — idles cleanly when the thread is conversation-only.
+  useEffect(() => {
+    if (idleThoughts.length === 0) return;
+    const handle = window.setInterval(() => {
+      const now = Date.now();
+      setIdleThoughts((prev) => prev.filter((t) => t.emittedAt + t.ttlMs > now));
+      setTick((n) => n + 1);
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [idleThoughts.length]);
+
+  const dismissIdleThought = (id: string): void => {
+    setIdleThoughts((prev) => prev.filter((t) => t.id !== id));
+    api.dismissIdleThought(id);
+  };
+
+  const respondToIdleThought = (thought: PanelIdleThought): void => {
+    // Treat clicking the thought as the user wanting to engage with it —
+    // pre-fill the input with a friendly reply prompt, then dismiss.
+    setInput(thought.text);
+    inputRef.current?.focus();
+    dismissIdleThought(thought.id);
+  };
 
   // Initial fetch: character + history
   useEffect(() => {
@@ -54,6 +84,18 @@ function App(): React.ReactElement {
     const el = threadRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns, streaming]);
+
+  // Also scroll when an idle thought is *added* (not when one expires — don't
+  // yank scroll position out from under the user just because a thought timed
+  // out). Tracks the prior count so we can distinguish growth from shrink.
+  const prevIdleCountRef = useRef(0);
+  useEffect(() => {
+    const el = threadRef.current;
+    if (el && idleThoughts.length > prevIdleCountRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+    prevIdleCountRef.current = idleThoughts.length;
+  }, [idleThoughts.length]);
 
   // IPC subscriptions
   useEffect(() => {
@@ -117,7 +159,22 @@ function App(): React.ReactElement {
     });
     const offSug = api.onSetSuggestions((items: string[]) => setSuggestions(items));
     const offOpen = api.onOpenForAsk(() => inputRef.current?.focus());
-    return () => { offUser(); offChunk(); offStreaming(); offFinal(); offSug(); offOpen(); };
+    const offTail = api.onSetTailSide((placement) => {
+      // Same tail-positioning protocol as the speech bubble — the dataset
+      // attribute picks which CSS rules apply (which edge sticks out) and
+      // the CSS variable slides the tail along that edge so it tracks Merlin
+      // when he isn't aligned with the panel's midpoint.
+      document.body.dataset.tail = placement.side;
+      document.body.style.setProperty('--tail-offset', String(placement.offset));
+    });
+    const offIdle = api.onAddIdleThought((thought) => {
+      // Append (replace any existing one with the same id to be idempotent).
+      setIdleThoughts((prev) => [...prev.filter((t) => t.id !== thought.id), thought]);
+    });
+    return () => {
+      offUser(); offChunk(); offStreaming(); offFinal();
+      offSug(); offOpen(); offTail(); offIdle();
+    };
   }, []);
 
   // Drag-drop handlers
@@ -246,6 +303,10 @@ function App(): React.ReactElement {
 
   return (
     <div className="app">
+      {/* The .panel is the visible dark surface — outer window is transparent
+          so the .panel-tail can stick out past it toward Merlin. Same shape
+          as the speech bubble, just bigger and themed dark. */}
+      <div className="panel-tail" aria-hidden="true" />
       <div className="titlebar">
         <span className="titlebar-icon" title={character}>🧙</span>
         <h1>{character}</h1>
@@ -286,6 +347,43 @@ function App(): React.ReactElement {
                   />
                 )}
               </div>
+            </div>
+          );
+        })}
+        {idleThoughts.map((thought) => {
+          const remaining = Math.max(
+            0,
+            Math.ceil((thought.emittedAt + thought.ttlMs - Date.now()) / 1000),
+          );
+          const totalSecs = Math.max(1, Math.round(thought.ttlMs / 1000));
+          const pctRemaining = Math.max(0, Math.min(100, (remaining / totalSecs) * 100));
+          return (
+            <div
+              key={thought.id}
+              className="turn idle-thought"
+              onClick={() => respondToIdleThought(thought)}
+              title="Click to reply, or wait for it to fade"
+            >
+              <div className="turn-header">
+                <span>💭 {character} (idle thought)</span>
+                <div className="turn-actions">
+                  <span className="idle-countdown" title={`${remaining} seconds until this fades`}>
+                    ⏱ <span className="idle-countdown-num">{remaining}</span><span className="idle-countdown-unit">sec</span>
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dismissIdleThought(thought.id);
+                    }}
+                    title="Dismiss"
+                  >×</button>
+                </div>
+              </div>
+              <div className="turn-content">{thought.text}</div>
+              <div
+                className="idle-progress"
+                style={{ width: `${pctRemaining}%` }}
+              />
             </div>
           );
         })}

@@ -1,6 +1,6 @@
 import { BrowserWindow, screen } from 'electron';
 import { join } from 'node:path';
-import { IPC, type TailSide } from '@shared/ipc-contract';
+import { IPC, type TailPlacement, type TailSide } from '@shared/ipc-contract';
 import { getSpriteWindow } from './spriteWindow';
 import { logger } from '../logger';
 
@@ -32,12 +32,14 @@ export function createBubbleWindow(): BrowserWindow {
   bubbleWindow = new BrowserWindow({
     width: BUBBLE_W,
     height: HEIGHT_READ,
+    minWidth: 260,
+    minHeight: 140,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
     hasShadow: false,
     skipTaskbar: true,
-    resizable: false,
+    resizable: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -213,12 +215,16 @@ export function programmaticMoveBubbleBy(dx: number, dy: number): void {
   const w = bubbleWindow;
   if (!w || w.isDestroyed()) return;
   const [x, y] = w.getPosition();
-  const nx = safeInt((x ?? 0) + dx);
-  const ny = safeInt((y ?? 0) + dy);
+  const cx = x ?? 0;
+  const cy = y ?? 0;
+  const nx = safeInt(cx + dx);
+  const ny = safeInt(cy + dy);
   if (nx === null || ny === null) {
     logger.warn('programmaticMoveBubbleBy: bad coords, dropping', { x, y, dx, dy });
     return;
   }
+  // Noop skip: see programmaticSetSpritePosition for the counter-leak issue.
+  if (nx === cx && ny === cy) return;
   programmatic(() => w.setPosition(nx, ny));
 }
 
@@ -232,34 +238,52 @@ export function programmaticSetBubblePosition(x: number, y: number): void {
     logger.warn('programmaticSetBubblePosition: bad coords, dropping', { x, y });
     return;
   }
+  const [cx, cy] = w.getPosition();
+  if ((cx ?? 0) === nx && (cy ?? 0) === ny) return;
   programmatic(() => w.setPosition(nx, ny));
 }
 
-/** Compute which side of the bubble the tail should be on so it points */
-/** roughly toward Merlin. Returns 'right' if Merlin is right of bubble center, */
-/** 'top' if Merlin is above, etc. */
-function computeTailSide(): TailSide {
+/** Compute the bubble's tail placement so it actually points at Merlin. The */
+/** side (left/right/top/bottom) is the dominant axis from bubble center to */
+/** sprite center. The offset is a 0-1 fraction along that side, mapped from */
+/** the sprite's center position relative to the bubble's edge, so the tail */
+/** slides along to track Merlin even when he isn't aligned with the bubble. */
+function computeTailPlacement(): TailPlacement {
   const w = bubbleWindow;
   const sprite = getSpriteWindow();
-  if (!w || !sprite) return 'right';
+  if (!w || !sprite) return { side: 'right', offset: 0.5 };
   const [bx, by] = w.getPosition();
   const [bw, bh] = w.getSize();
   const [sx, sy] = sprite.getPosition();
   const [sw, sh] = sprite.getSize();
-  const bcx = (bx ?? 0) + (bw ?? 0) / 2;
-  const bcy = (by ?? 0) + (bh ?? 0) / 2;
+  const bx0 = bx ?? 0;
+  const by0 = by ?? 0;
+  const bw0 = bw ?? 360;
+  const bh0 = bh ?? 200;
   const scx = (sx ?? 0) + (sw ?? 0) / 2;
   const scy = (sy ?? 0) + (sh ?? 0) / 2;
-  const dx = scx - bcx;
-  const dy = scy - bcy;
-  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'right' : 'left';
-  return dy >= 0 ? 'bottom' : 'top';
+  const dx = scx - (bx0 + bw0 / 2);
+  const dy = scy - (by0 + bh0 / 2);
+  let side: TailSide;
+  let offset: number;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    side = dx >= 0 ? 'right' : 'left';
+    // Vertical offset along the bubble's side edge, tracking Merlin's center.
+    offset = (scy - by0) / bh0;
+  } else {
+    side = dy >= 0 ? 'bottom' : 'top';
+    // Horizontal offset along the bubble's top/bottom edge.
+    offset = (scx - bx0) / bw0;
+  }
+  // Clamp so the tail never falls off the bubble's rounded corners.
+  offset = Math.max(0.1, Math.min(0.9, offset));
+  return { side, offset };
 }
 
 export function syncTailSide(): void {
   const w = bubbleWindow;
   if (!w || w.isDestroyed() || !w.isVisible()) return;
-  w.webContents.send(IPC.bubbleSetTailSide, computeTailSide());
+  w.webContents.send(IPC.bubbleSetTailSide, computeTailPlacement());
 }
 
 /** Append text chunks (streaming responses). */

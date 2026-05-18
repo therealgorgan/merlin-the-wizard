@@ -7,9 +7,13 @@ html, body, #root {
   width: 100%;
   font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
   font-size: 13px;
-  background: #15151a;
+  /* Outer window is transparent (so the .panel-tail can stick out past the
+     dark inner surface). The .app element below paints the actual dark theme. */
+  background: transparent;
   color: #e8e8ec;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Dark scrollbar matching the panel theme — replaces the Windows default. */
@@ -36,9 +40,125 @@ html, body, #root {
 }
 
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Inset from the window edge so the .panel-tail has room to stick out past
+     the dark surface — must be ≥ the tail-extension distance below. */
+  margin: 18px;
+  width: calc(100% - 36px);
+  height: calc(100% - 36px);
+  background: #15151a;
+  border: 1.5px solid #2c2c34;
+  border-radius: 14px;
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0,0,0,0.4);
+  /* No overflow:hidden — would clip .panel-tail. Inner blocks (titlebar,
+     composer) get matching rounded corners so the .app's border-radius still
+     reads correctly without it. */
+  animation: panel-pop-in 200ms ease-out;
+}
+
+@keyframes panel-pop-in {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* --- Tail (points at Merlin) ------------------------------------------------
+   Same protocol as the speech bubble: --tail-offset (0-1) slides the tail
+   along the chosen edge so it tracks Merlin even when he isn't aligned with
+   the panel's midpoint. data-tail picks which edge sticks out. */
+
+/* Default RIGHT: Merlin to our right (panel was placed to his left). */
+/* The tail is a CSS triangle. With border-left: 22px solid, the visible
+   triangle's apex sits at the element origin and extends 22px LEFTWARD.
+   right: -18 pushes the origin 18px past .app's right edge, so the triangle
+   spans .app-right-4 → .app-right+18 (most of the triangle sticks out). */
+.panel-tail {
+  position: absolute;
+  right: -18px;
+  top: calc(var(--tail-offset, 0.5) * 100%);
+  margin-top: -11px;
+  width: 0;
+  height: 0;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+  border-left: 22px solid #2c2c34;
+  pointer-events: none;
+  z-index: 50;
+}
+.panel-tail::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  top: -9px;
+  width: 0;
+  height: 0;
+  border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent;
+  border-left: 18px solid #15151a;
+}
+
+/* LEFT: Merlin to our left (panel was placed to his right). */
+body[data-tail='left'] .panel-tail {
+  right: auto;
+  left: -18px;
+  top: calc(var(--tail-offset, 0.5) * 100%);
+  margin-top: -11px;
+  border-left: none;
+  border-right: 22px solid #2c2c34;
+}
+body[data-tail='left'] .panel-tail::after {
+  right: auto;
+  left: 4px;
+  top: -9px;
+  border-left: none;
+  border-right: 18px solid #15151a;
+}
+
+/* TOP: Merlin above us. */
+body[data-tail='top'] .panel-tail {
+  right: auto;
+  top: -18px;
+  left: calc(var(--tail-offset, 0.5) * 100%);
+  margin-top: 0;
+  margin-left: -11px;
+  border-top: none;
+  border-bottom: 22px solid #2c2c34;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+}
+body[data-tail='top'] .panel-tail::after {
+  right: auto;
+  top: 4px;
+  left: -9px;
+  border-top: none;
+  border-bottom: 18px solid #15151a;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+}
+
+/* BOTTOM: Merlin below us. */
+body[data-tail='bottom'] .panel-tail {
+  right: auto;
+  top: auto;
+  bottom: -18px;
+  left: calc(var(--tail-offset, 0.5) * 100%);
+  margin-top: 0;
+  margin-left: -11px;
+  border-top: 22px solid #2c2c34;
+  border-bottom: none;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+}
+body[data-tail='bottom'] .panel-tail::after {
+  right: auto;
+  bottom: 4px;
+  top: auto;
+  left: -9px;
+  border-top: 18px solid #15151a;
+  border-bottom: none;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
 }
 
 /* Title bar — draggable region, contains close button + character corner */
@@ -51,6 +171,10 @@ html, body, #root {
   padding: 0 12px 0 16px;
   background: #1f1f26;
   border-bottom: 1px solid #2c2c34;
+  /* Match the .app's top corners since we no longer rely on overflow:hidden
+     to clip the bg into the rounded corner area. (14px outer radius - 1.5px
+     border = 12.5px inner radius.) */
+  border-radius: 12.5px 12.5px 0 0;
   -webkit-app-region: drag;
   user-select: none;
 }
@@ -167,6 +291,72 @@ html, body, #root {
 }
 .thread .turn-content pre code { background: transparent; padding: 0; color: inherit; }
 .thread .turn-content a { color: #88aaee; }
+/* Idle thought — a passive nudge Merlin emits during long idle stretches.
+   Rendered with a softer, ephemeral look + a visible countdown bar so the
+   user knows it'll disappear if they ignore it. Click to engage. */
+.thread .turn.idle-thought {
+  position: relative;
+  align-self: center;
+  max-width: 90%;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 200ms, transform 200ms;
+  animation: idle-thought-in 260ms ease-out;
+}
+.thread .turn.idle-thought:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+.thread .turn.idle-thought .turn-header {
+  color: #d0a868;
+  font-style: italic;
+}
+.thread .turn.idle-thought .turn-content {
+  background: #2a2520;
+  border-left: 3px solid #d0a868;
+  font-style: italic;
+  color: #d8c4a0;
+  border-radius: 10px 10px 10px 2px;
+}
+.thread .turn.idle-thought .idle-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+  color: #d0a868;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: rgba(208, 168, 104, 0.12);
+  border: 1px solid #5a4a35;
+  border-radius: 8px;
+}
+.thread .turn.idle-thought .idle-countdown-num {
+  font-weight: 600;
+}
+.thread .turn.idle-thought .idle-countdown-unit {
+  /* Smaller, no letter-spacing so the "sec" stays unambiguous (the old "Xs"
+     had an "s" that looked like a 5 at small sizes). */
+  font-size: 9px;
+  opacity: 0.85;
+  margin-left: 1px;
+  text-transform: lowercase;
+  letter-spacing: 0;
+}
+.thread .turn.idle-thought .idle-progress {
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(to right, #d0a868, #8a6f4a);
+  border-radius: 1px;
+  transition: width 1s linear;
+  box-shadow: 0 0 4px rgba(208, 168, 104, 0.6);
+}
+@keyframes idle-thought-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 0.85; transform: translateY(0); }
+}
+
 .thread .typing-dots {
   display: inline-flex; gap: 3px; padding: 4px 0;
 }
@@ -204,6 +394,8 @@ html, body, #root {
   border-top: 1px solid #2c2c34;
   background: #1a1a20;
   padding: 10px 14px 12px 14px;
+  /* Match .app's bottom corners (same reasoning as .titlebar above). */
+  border-radius: 0 0 12.5px 12.5px;
 }
 .attachments {
   display: flex;
@@ -301,10 +493,11 @@ html, body, #root {
   50% { opacity: 0.5; }
 }
 
-/* Drop target overlay */
-body.drop-target::after {
+/* Drop target overlay — sits inside the .app rectangle, not the transparent
+   outer window, so the dashed border lines up with the panel's rounded edge. */
+body.drop-target .app::after {
   content: '📎 Drop to attach';
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
@@ -314,6 +507,7 @@ body.drop-target::after {
   color: #5a83d1;
   background: rgba(21, 21, 26, 0.9);
   border: 3px dashed #5a83d1;
+  border-radius: 12px;
   z-index: 100;
   pointer-events: none;
 }

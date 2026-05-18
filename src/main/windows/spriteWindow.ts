@@ -4,6 +4,7 @@ import { logger } from '../logger';
 import { read, write } from '../storage/store';
 import { IPC } from '@shared/ipc-contract';
 import { getBubbleWindow, programmaticSetBubblePosition } from './bubbleWindow';
+import { getChatPanelWindow, programmaticSetPanelPosition } from './chatPanelWindow';
 
 // Native sprite framesize in clippyjs Merlin pack is 128x128.
 const BASE_SPRITE_PX = 128;
@@ -183,6 +184,7 @@ export function programmaticMoveSpriteBy(dx: number, dy: number): void {
     logger.warn('programmaticMoveSpriteBy: bad coords, dropping', { x, y, dx, dy });
     return;
   }
+  if (nx === x && ny === y) return; // noop — see programmaticSetSpritePosition comment
   programmatic(() => w.setPosition(nx, ny));
 }
 
@@ -195,6 +197,13 @@ export function programmaticSetSpritePosition(x: number, y: number): void {
     logger.warn('programmaticSetSpritePosition: bad coords, dropping', { x, y });
     return;
   }
+  // Skip noop moves — calling setPosition with the SAME coords doesn't fire
+  // a move event, so the suppress counter would tick up without ever being
+  // decremented, eventually swallowing real user-drag events. This matters
+  // for slow smooth moves (brain wander spans ~80px / ~1500ms, so sub-pixel
+  // ticks round to the same int many times in a row).
+  const [cx, cy] = w.getPosition();
+  if ((cx ?? 0) === nx && (cy ?? 0) === ny) return;
   programmatic(() => w.setPosition(nx, ny));
 }
 
@@ -229,12 +238,12 @@ export async function smoothMoveSpriteTo(
   // (brain wander, move_to / move_relative tool, mode swap), play the
   // matching Move* animation. The sprite isn't being dragged by the user so
   // the renderer-starvation problem doesn't apply — the animation actually
-  // renders. Only fire for moves > 150px; tiny drifts and wiggles stay silent.
-  // Note: unlike DRAG (where Move* is inverted because the user is yanking
-  // him), autonomous moves use direct mapping — he glides in the direction
-  // he's heading.
+  // renders. Threshold of 40px excludes wiggleSprite (14px ticks) but
+  // catches brain wander (up to ~94px) and move_relative small (100px).
+  // Note: autonomous moves use direct mapping (drag inverts because the user
+  // is yanking him; autonomous moves are Merlin gliding under his own power).
   const moveDist = Math.hypot(targetX - startX, targetY - startY);
-  if (moveDist > 150) {
+  if (moveDist > 40) {
     const dxAuto = targetX - startX;
     const dyAuto = targetY - startY;
     let autoMove: 'MoveLeft' | 'MoveRight' | 'MoveUp' | 'MoveDown';
@@ -246,7 +255,10 @@ export async function smoothMoveSpriteTo(
     w.webContents.send(IPC.spritePlay, autoMove);
   }
 
-  // Capture bubble's start position so it can drift alongside by the same delta.
+  // Capture bubble + panel start positions so they can drift alongside by
+  // the same delta. Both are tracked because the sprite has two possible
+  // companion windows: the bubble (classic mode) and the chat panel (modern
+  // mode). If either is visible at the start of the move, it follows.
   const bubble = getBubbleWindow();
   let bubbleStartX = 0;
   let bubbleStartY = 0;
@@ -256,6 +268,16 @@ export async function smoothMoveSpriteTo(
     bubbleStartX = bx ?? 0;
     bubbleStartY = by ?? 0;
     bubbleFollows = true;
+  }
+  const panel = getChatPanelWindow();
+  let panelStartX = 0;
+  let panelStartY = 0;
+  let panelFollows = false;
+  if (panel && panel.isVisible()) {
+    const [px, py] = panel.getPosition();
+    panelStartX = px ?? 0;
+    panelStartY = py ?? 0;
+    panelFollows = true;
   }
 
   const totalDx = targetX - startX;
@@ -279,6 +301,12 @@ export async function smoothMoveSpriteTo(
         programmaticSetBubblePosition(
           bubbleStartX + totalDx * ease,
           bubbleStartY + totalDy * ease,
+        );
+      }
+      if (panelFollows && getChatPanelWindow()?.isVisible()) {
+        programmaticSetPanelPosition(
+          panelStartX + totalDx * ease,
+          panelStartY + totalDy * ease,
         );
       }
 

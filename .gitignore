@@ -18,6 +18,14 @@ resources/models/
 # User-data folders Electron may create during dev
 userData/
 
+# Microsoft Agent character assets are downloaded at install time via
+# `npm run assets` (see scripts/prepare-merlin-assets.mjs). They're
+# Microsoft IP fetched from the clippyjs CDN; do not redistribute.
+src/renderer/public/agents/
+
+# Claude Code / agent harness local state
+.claude/
+
 # OS-level / editor swap
 *.swp
 *~

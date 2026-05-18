@@ -137,6 +137,15 @@ export function registerIpcHandlers(): void {
     dismissBubble();
   });
 
+  ipcMain.handle(IPC.panelDismissIdleThought, async (_e, id: string) => {
+    // The renderer removes the thought from its own UI; this notifies main so
+    // brain can reset its "last thought emitted" cooldown — without it, brain
+    // would happily fire another thought immediately, defeating the purpose
+    // of the user dismissing the first.
+    const { noteIdleThoughtDismissed } = await import('../brain');
+    noteIdleThoughtDismissed(id);
+  });
+
   ipcMain.handle(IPC.panelRegenerate, async () => {
     await loadHistory();
     const history = getHistorySnapshot();
@@ -195,27 +204,84 @@ export function registerIpcHandlers(): void {
     clearPendingScreenshot();
   });
 
-  // Drag events: debounce into start/end edges + feed per-frame deltas to the
-  // AnimationController so it can fire directional MoveLeft/Right/Up/Down
-  // animations when the user pushes Merlin in a particular direction.
+  // Drag events: per-frame deltas drive the sprite window movement AND feed
+  // the AnimationController. Drag-end is signalled EXPLICITLY by the renderer
+  // on pointerup (not inferred from delta absence) so the Move* animation
+  // keeps playing while the user holds the button down without moving.
+  // A held-drag heartbeat re-fires the last Move* every ~2.4s so the gesture
+  // stays continuous instead of finishing once and going still.
   let dragActive = false;
-  let dragEndTimer: NodeJS.Timeout | null = null;
-  const DRAG_END_DEBOUNCE_MS = 220;
+  let dragHeartbeat: NodeJS.Timeout | null = null;
+  let dragSafetyTimer: NodeJS.Timeout | null = null;
+  const DRAG_SAFETY_TIMEOUT_MS = 6_000;
+  const DRAG_HEARTBEAT_MS = 2_400;
+
+  // setPosition throttling. Per-IPC moves at 60Hz freeze the sprite renderer's
+  // paint pipeline (Chromium-on-Windows defers content paint while a window
+  // is being moved). Accumulate deltas and flush at ~30Hz instead — halves
+  // the OS-level move events and gives clippyjs's setTimeout-driven frame
+  // cycling room to actually render MoveUp's frames during the drag.
+  let pendingMoveDx = 0;
+  let pendingMoveDy = 0;
+  let moveFlushTimer: NodeJS.Timeout | null = null;
+  const MOVE_FLUSH_MS = 33;
+
+  function flushPendingMove(): void {
+    moveFlushTimer = null;
+    if (pendingMoveDx === 0 && pendingMoveDy === 0) return;
+    const dx = pendingMoveDx;
+    const dy = pendingMoveDy;
+    pendingMoveDx = 0;
+    pendingMoveDy = 0;
+    moveSpriteBy(dx, dy);
+  }
+
+  function scheduleMoveFlush(): void {
+    if (moveFlushTimer) return;
+    moveFlushTimer = setTimeout(flushPendingMove, MOVE_FLUSH_MS);
+  }
+
+  function clearDragTimers(): void {
+    if (dragHeartbeat) { clearInterval(dragHeartbeat); dragHeartbeat = null; }
+    if (dragSafetyTimer) { clearTimeout(dragSafetyTimer); dragSafetyTimer = null; }
+    if (moveFlushTimer) { clearTimeout(moveFlushTimer); moveFlushTimer = null; }
+  }
+
+  async function endDrag(): Promise<void> {
+    if (!dragActive) return;
+    dragActive = false;
+    // Flush any leftover delta so the final landing position is exact.
+    flushPendingMove();
+    clearDragTimers();
+    const m = await import('../animationController');
+    m.reactToDragEnd();
+  }
 
   ipcMain.handle(IPC.windowDrag, async (_e, payload: { dx: number; dy: number }) => {
-    moveSpriteBy(payload.dx, payload.dy);
+    pendingMoveDx += payload.dx;
+    pendingMoveDy += payload.dy;
+    scheduleMoveFlush();
     const anim = await import('../animationController');
     if (!dragActive) {
       dragActive = true;
       anim.reactToDragStart();
+      // Heartbeat: while dragActive, re-fire the most-recent directional
+      // Move* animation so it stays alive even if the user stops moving the
+      // cursor mid-drag (mouse held still = no further dx/dy events).
+      dragHeartbeat = setInterval(() => {
+        if (dragActive) anim.repeatLastDragAnim();
+      }, DRAG_HEARTBEAT_MS);
     }
     anim.reactToDrag(payload.dx, payload.dy);
-    if (dragEndTimer) clearTimeout(dragEndTimer);
-    dragEndTimer = setTimeout(() => {
-      dragActive = false;
-      dragEndTimer = null;
-      void import('../animationController').then((m) => m.reactToDragEnd());
-    }, DRAG_END_DEBOUNCE_MS);
+    // Safety net: if the renderer crashes or windowDragEnd somehow doesn't
+    // arrive (e.g. window closed mid-drag), the dragActive flag would stick.
+    // This timer ends the drag if no drag delta has arrived in 6s.
+    if (dragSafetyTimer) clearTimeout(dragSafetyTimer);
+    dragSafetyTimer = setTimeout(() => void endDrag(), DRAG_SAFETY_TIMEOUT_MS);
+  });
+
+  ipcMain.handle(IPC.windowDragEnd, async () => {
+    await endDrag();
   });
 
   // ----- Settings IPC -----

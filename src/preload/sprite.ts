@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('spriteEvents', {
   drag(dx: number, dy: number): void {
     void ipcRenderer.invoke(IPC.windowDrag, { dx, dy });
   },
+  dragEnd(): void {
+    void ipcRenderer.invoke(IPC.windowDragEnd);
+  },
   zoomBy(delta: number): void {
     void ipcRenderer.invoke(IPC.spriteZoomBy, delta);
   },

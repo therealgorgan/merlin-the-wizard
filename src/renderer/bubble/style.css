@@ -288,11 +288,15 @@ body.drop-target .balloon::before {
 
 /* --- Tail directions --- */
 
-/* Default RIGHT: Merlin to our right. Centered vertically on bubble side. */
+/* --tail-offset is a 0-1 fraction along the chosen edge of the bubble, set
+   by main.ts on every move-sync tick so the tail tracks Merlin even when
+   he isn't aligned with the bubble's midpoint. Defaults to 0.5 (midpoint). */
+
+/* Default RIGHT: Merlin to our right. Vertical position tracks --tail-offset. */
 .balloon-tail {
   position: absolute;
   right: -18px;
-  top: 50%;
+  top: calc(var(--tail-offset, 0.5) * 100%);
   margin-top: -10px;
   width: 0;
   height: 0;
@@ -316,7 +320,7 @@ body.drop-target .balloon::before {
 body[data-tail='left'] .balloon-tail {
   right: auto;
   left: -18px;
-  top: 50%;
+  top: calc(var(--tail-offset, 0.5) * 100%);
   margin-top: -10px;
   border-left: none;
   border-right: 20px solid #2b2b2b;
@@ -333,7 +337,7 @@ body[data-tail='left'] .balloon-tail::after {
 body[data-tail='top'] .balloon-tail {
   right: auto;
   top: -18px;
-  left: 50%;
+  left: calc(var(--tail-offset, 0.5) * 100%);
   margin-top: 0;
   margin-left: -10px;
   border-top: none;
@@ -356,7 +360,7 @@ body[data-tail='bottom'] .balloon-tail {
   right: auto;
   top: auto;
   bottom: -18px;
-  left: 50%;
+  left: calc(var(--tail-offset, 0.5) * 100%);
   margin-top: 0;
   margin-left: -10px;
   border-top: 20px solid #2b2b2b;

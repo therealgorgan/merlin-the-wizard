@@ -3,6 +3,7 @@ import {
   IPC,
   type PanelApi,
   type PanelChatTurn,
+  type PanelIdleThought,
 } from '@shared/ipc-contract';
 import type { AnimationName } from '@shared/animations';
 
@@ -32,10 +33,26 @@ const api: PanelApi = {
     ipcRenderer.on(IPC.panelSetSuggestions, handler);
     return () => ipcRenderer.off(IPC.panelSetSuggestions, handler);
   },
+  onSetTailSide(cb) {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      placement: { side: 'left' | 'right' | 'top' | 'bottom'; offset: number },
+    ): void => cb(placement);
+    ipcRenderer.on(IPC.panelSetTailSide, handler);
+    return () => ipcRenderer.off(IPC.panelSetTailSide, handler);
+  },
   onOpenForAsk(cb) {
     const handler = (): void => cb();
     ipcRenderer.on(IPC.panelOpenForAsk, handler);
     return () => ipcRenderer.off(IPC.panelOpenForAsk, handler);
+  },
+  onAddIdleThought(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, thought: PanelIdleThought): void => cb(thought);
+    ipcRenderer.on(IPC.panelAddIdleThought, handler);
+    return () => ipcRenderer.off(IPC.panelAddIdleThought, handler);
+  },
+  dismissIdleThought(id: string): void {
+    void ipcRenderer.invoke(IPC.panelDismissIdleThought, id);
   },
   submit(text: string): void {
     void ipcRenderer.invoke(IPC.panelSubmit, text);

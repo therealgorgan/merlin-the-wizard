@@ -26,7 +26,13 @@ body.merlin-dragging * {
    We override its positioning so it sits within our small window.
    No -webkit-app-region:drag here — that suppresses contextmenu / dblclick
    on Windows (right-click becomes the OS title-bar menu). Drag is implemented
-   manually via pointer events in main.ts. */
+   manually via pointer events in main.ts.
+
+   No `will-change: transform` here — it promotes .clippy to its own GPU layer
+   and causes Chromium to defer the layer's redraws when its child contents
+   (clippyjs's background-position frame swap) change during rapid window
+   moves. Result: sprite-frame animation appears frozen during drag. Without
+   will-change, frames update in lockstep with paints. */
 body > .clippy {
   position: absolute !important;
   left: 50% !important;
@@ -34,7 +40,6 @@ body > .clippy {
   transform: translate(-50%, -50%) scale(var(--merlin-zoom, 1)) rotate(0deg);
   transform-origin: center center;
   transition: transform 120ms ease-out, filter 120ms ease-out;
-  will-change: transform, filter;
 }
 
 /* Classic appearance (default) — keep the retro pixelated look. */
@@ -65,14 +70,18 @@ body[data-appearance='retouched'] > .clippy * {
   image-rendering: high-quality;
 }
 
-/* While the user is actively dragging Merlin, give him a visible "lifted"
-   state — slight scale-up + drop-shadow + tilt in the drag direction. These
-   are GPU-composited CSS transforms, so they render even while Electron's
-   rapid setPosition starves the renderer of paint cycles for the clippyjs
-   sprite-frame animation. This is the user-visible drag feedback. */
+/* Drag state — slight scale-up + drop-shadow + tilt (sway based on the
+   smoothed drag velocity, set by the renderer's drag loop). These CSS
+   effects are GPU-composited so they render even while clippyjs's
+   background-position frame swap can be deferred by the compositor
+   during rapid window moves. */
 body.merlin-dragging > .clippy {
-  transform: translate(-50%, -50%) scale(calc(var(--merlin-zoom, 1) * 1.08)) rotate(-4deg);
+  transform:
+    translate(-50%, -50%)
+    scale(calc(var(--merlin-zoom, 1) * 1.08))
+    rotate(var(--merlin-drag-tilt, 0deg));
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55));
+  transition: transform 80ms ease-out, filter 120ms ease-out;
 }
 body[data-appearance='retouched'].merlin-dragging > .clippy {
   filter:

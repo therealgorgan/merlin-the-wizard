@@ -1,11 +1,19 @@
 import { IPC } from '@shared/ipc-contract';
 import { showBubble } from './windows/bubbleWindow';
 import { getSpriteWindow } from './windows/spriteWindow';
+import {
+  getChatPanelWindow,
+  panelAddIdleThought,
+} from './windows/chatPanelWindow';
 import { read as readStore } from './storage/store';
 import { speak as ttsSpeak } from './voice/tts';
 import { logger } from './logger';
 
 const WELCOME_DURATION_MS = 12_000;
+// Panel welcome lingers longer than the bubble welcome — the bubble fades on
+// its own to clear screen space, while the panel thought is unobtrusive and
+// benefits from extra time to be read or engaged with.
+const WELCOME_PANEL_TTL_MS = 120_000;
 
 function timeOfDay(date: Date): 'morning' | 'afternoon' | 'evening' | 'night' {
   const h = date.getHours();
@@ -118,14 +126,37 @@ export async function playWelcome(): Promise<void> {
     void getActiveSpriteHost().then((h) => h?.webContents.send(IPC.spritePlay, 'Wave'));
   }, 1800);
   setTimeout(() => {
-    // In modern mode, the classic floating bubble shouldn't appear over the
-    // panel — it'd be a stray UI artifact. Speak the welcome regardless if
-    // voice is on; the panel itself shows the conversation thread for text.
-    if (settings.displayMode !== 'modern') {
+    if (settings.displayMode === 'modern') {
+      // Modern mode: surface the welcome as an idle-thought turn in the panel
+      // so the user actually sees it. The panel might still be loading when
+      // welcome fires (we kick off in parallel at boot), so retry briefly
+      // until it's visible. Times out after ~5s to avoid hanging.
+      tryEmitWelcomeToPanel(bubble.replace(HINT, '').trim(), 0);
+    } else {
+      // Classic mode: floating speech bubble next to the sprite.
       showBubble(bubble, { mode: 'read', durationMs: WELCOME_DURATION_MS });
     }
     if (settings.speakWelcome && settings.voiceEngine !== 'off') {
       void ttsSpeak(spoken);
     }
   }, 600);
+}
+
+function tryEmitWelcomeToPanel(text: string, attempt: number): void {
+  const panel = getChatPanelWindow();
+  if (panel && panel.isVisible()) {
+    const now = Date.now();
+    panelAddIdleThought({
+      id: `welcome-${now}`,
+      text,
+      emittedAt: now,
+      ttlMs: WELCOME_PANEL_TTL_MS,
+    });
+    return;
+  }
+  if (attempt >= 10) {
+    logger.warn('welcome: panel never became visible, dropping welcome thought');
+    return;
+  }
+  setTimeout(() => tryEmitWelcomeToPanel(text, attempt + 1), 500);
 }

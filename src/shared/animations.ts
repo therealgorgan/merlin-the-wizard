@@ -81,10 +81,25 @@ export function isAnimationName(value: string): value is AnimationName {
   return ANIMATION_SET.has(value);
 }
 
+// Animations that cause clippyjs's agent.stop() to be called inside enqueue,
+// halting the current sprite-frame animation immediately. Use sparingly —
+// agent.stop() followed by agent.play() in the same tick leaves clippyjs in a
+// bad state for some animations (see ClippyController.enqueue handling).
 export const PREEMPTING_ANIMATIONS: ReadonlySet<AnimationName> = new Set([
   'Hide',
   'Show',
   'GetAttention',
+] as const);
+
+// Animations that should jump the queue (clear pending) but should NOT call
+// agent.stop() — they wait for the current animation to finish naturally,
+// then play. Useful for animations that are urgent in the "user expects to
+// see this soon" sense but not "stop everything right now."
+export const SOFT_PREEMPTING_ANIMATIONS: ReadonlySet<AnimationName> = new Set([
+  'MoveLeft',
+  'MoveRight',
+  'MoveUp',
+  'MoveDown',
 ] as const);
 
 export const IDLE_ANIMATIONS: readonly AnimationName[] = [

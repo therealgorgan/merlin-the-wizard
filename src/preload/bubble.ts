@@ -4,7 +4,7 @@ import {
   type BubbleApi,
   type BubblePayload,
   type BubbleMode,
-  type TailSide,
+  type TailPlacement,
 } from '@shared/ipc-contract';
 
 const api: BubbleApi = {
@@ -20,7 +20,8 @@ const api: BubbleApi = {
     return () => ipcRenderer.off(IPC.bubbleAppendText, handler);
   },
   onSetTailSide(cb) {
-    const handler = (_e: Electron.IpcRendererEvent, side: TailSide): void => cb(side);
+    const handler = (_e: Electron.IpcRendererEvent, placement: TailPlacement): void =>
+      cb(placement);
     ipcRenderer.on(IPC.bubbleSetTailSide, handler);
     return () => ipcRenderer.off(IPC.bubbleSetTailSide, handler);
   },

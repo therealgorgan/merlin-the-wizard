@@ -36,6 +36,9 @@ export const IPC = {
   panelFinalizeAssistant: 'panel:finalizeAssistant',
   panelAddUserTurn: 'panel:addUserTurn',
   panelSetSuggestions: 'panel:setSuggestions',
+  panelSetTailSide: 'panel:setTailSide',
+  panelAddIdleThought: 'panel:addIdleThought',
+  panelDismissIdleThought: 'panel:dismissIdleThought',
   panelSubmit: 'panel:submit',
   panelStop: 'panel:stop',
   panelRegenerate: 'panel:regenerate',
@@ -89,6 +92,7 @@ export const IPC = {
 
   // window control
   windowDrag: 'window:drag',
+  windowDragEnd: 'window:dragEnd',
   windowClose: 'window:close',
 } as const;
 
@@ -125,6 +129,14 @@ export interface SpriteApi {
 
 export type BubbleMode = 'read' | 'ask';
 export type TailSide = 'left' | 'right' | 'top' | 'bottom';
+/** Offset along the chosen side as a 0-1 fraction. For 'left'/'right' it's */
+/** vertical (0=top of bubble, 1=bottom). For 'top'/'bottom' it's horizontal */
+/** (0=left of bubble, 1=right). Lets the tail actually point at Merlin when */
+/** he isn't aligned with the bubble's midpoint. */
+export interface TailPlacement {
+  side: TailSide;
+  offset: number;
+}
 export interface BubblePayload {
   text: string;
   mode: BubbleMode;
@@ -133,7 +145,7 @@ export interface BubblePayload {
 export interface BubbleApi {
   onSetText: (cb: (payload: BubblePayload) => void) => () => void;
   onAppendText: (cb: (text: string) => void) => () => void;
-  onSetTailSide: (cb: (side: TailSide) => void) => () => void;
+  onSetTailSide: (cb: (placement: TailPlacement) => void) => () => void;
   onSetMode: (cb: (mode: BubbleMode) => void) => () => void;
   onSetSuggestions: (cb: (suggestions: string[]) => void) => () => void;
   submit: (text: string) => void;
@@ -190,6 +202,19 @@ export interface PanelChatTurn {
   streaming?: boolean;
 }
 
+/** A passive "thought" Merlin emits when the user has been idle for a while. */
+/** Renders inline in the chat thread with a visible countdown — auto-removes */
+/** itself when the timer expires (or earlier if the user dismisses it or */
+/** sends a message that supersedes it). */
+export interface PanelIdleThought {
+  id: string;
+  text: string;
+  /** When the thought was emitted (epoch ms). */
+  emittedAt: number;
+  /** How long until it expires (ms from emittedAt). */
+  ttlMs: number;
+}
+
 export interface PanelApi {
   /** Streamed assistant text in chunks. */
   onAppendAssistantChunk: (cb: (text: string) => void) => () => void;
@@ -200,6 +225,15 @@ export interface PanelApi {
   /** Mark the latest assistant turn done; pass final tag-stripped text. */
   onFinalizeAssistant: (cb: (text: string) => void) => () => void;
   onSetSuggestions: (cb: (sug: string[]) => void) => () => void;
+  /** Tail-side updates (mirrors bubble) — panel renders a tail that points */
+  /** at the floating sprite window so the chat reads as "attached" to Merlin. */
+  onSetTailSide: (cb: (placement: TailPlacement) => void) => () => void;
+  /** Push a new idle thought into the thread. The panel renders it with a */
+  /** visible countdown and auto-removes when the TTL expires. */
+  onAddIdleThought: (cb: (thought: PanelIdleThought) => void) => () => void;
+  /** Tell main the user dismissed (or the timer expired) an idle thought, */
+  /** so brain doesn't fire it again immediately. */
+  dismissIdleThought: (id: string) => void;
   /** Open the panel + focus the input. */
   onOpenForAsk: (cb: () => void) => () => void;
   /** Submit user text from the panel back to main. */

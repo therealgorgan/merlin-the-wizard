@@ -63,6 +63,7 @@ interface SpriteEventsApi {
   doubleClick(): void;
   rightClick(x: number, y: number): void;
   drag(dx: number, dy: number): void;
+  dragEnd(): void;
   zoomBy(delta: number): void;
 }
 declare global {
@@ -77,10 +78,55 @@ const DRAG_THRESHOLD_PX = 3;
 // breathing room to actually render its sprite-frame animation during the drag.
 let pendingDragDx = 0;
 let pendingDragDy = 0;
-let dragRafScheduled = false;
+let dragLoopRunning = false;
+
+// Smoothed horizontal velocity → CSS --merlin-drag-tilt (pendulum sway).
+// Pure CSS-var update so it's compositor-friendly. Decays back to 0 when the
+// user holds the mouse still mid-drag so Merlin settles upright.
+let smoothedDx = 0;
+const SWAY_SMOOTH_ALPHA = 0.35;
+const SWAY_DECAY_PER_FRAME = 0.86;
+const SWAY_X_TILT_FACTOR = -0.55;
+const SWAY_MAX_TILT_DEG = 14;
+
+function applySway(): void {
+  const tilt = Math.max(
+    -SWAY_MAX_TILT_DEG,
+    Math.min(SWAY_MAX_TILT_DEG, smoothedDx * SWAY_X_TILT_FACTOR),
+  );
+  document.documentElement.style.setProperty('--merlin-drag-tilt', `${tilt.toFixed(2)}deg`);
+}
+
+function dragLoop(): void {
+  if (!dragLoopRunning) return;
+  if (pendingDragDx !== 0 || pendingDragDy !== 0) {
+    const dx = pendingDragDx;
+    const dy = pendingDragDy;
+    pendingDragDx = 0;
+    pendingDragDy = 0;
+    smoothedDx = smoothedDx * (1 - SWAY_SMOOTH_ALPHA) + dx * SWAY_SMOOTH_ALPHA;
+    window.spriteEvents?.drag(dx, dy);
+  } else {
+    smoothedDx *= SWAY_DECAY_PER_FRAME;
+    if (Math.abs(smoothedDx) < 0.05) smoothedDx = 0;
+  }
+  applySway();
+  requestAnimationFrame(dragLoop);
+}
+
+function startDragLoop(): void {
+  if (dragLoopRunning) return;
+  dragLoopRunning = true;
+  requestAnimationFrame(dragLoop);
+}
+
+function stopDragLoop(): void {
+  dragLoopRunning = false;
+  smoothedDx = 0;
+  document.documentElement.style.removeProperty('--merlin-drag-tilt');
+}
 
 function flushPendingDrag(): void {
-  dragRafScheduled = false;
   if (pendingDragDx === 0 && pendingDragDy === 0) return;
   const dx = pendingDragDx;
   const dy = pendingDragDy;
@@ -103,25 +149,29 @@ function wireMouseEvents(): void {
     if (!active.moved && Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) {
       active.moved = true;
       document.body.classList.add('merlin-dragging');
+      startDragLoop();
     }
     if (active.moved && (dx || dy)) {
       active.lastX = e.screenX;
       active.lastY = e.screenY;
       pendingDragDx += dx;
       pendingDragDy += dy;
-      if (!dragRafScheduled) {
-        dragRafScheduled = true;
-        requestAnimationFrame(flushPendingDrag);
-      }
     }
   });
   function endDrag(e: PointerEvent): void {
     if (!active || e.pointerId !== active.pointerId) return;
+    const wasMoved = active.moved;
     (e.target as Element).releasePointerCapture?.(active.pointerId);
     active = null;
     document.body.classList.remove('merlin-dragging');
     // Flush any pending coalesced delta so the final position is exact.
     flushPendingDrag();
+    stopDragLoop();
+    // Tell main the drag explicitly ended — main otherwise infers end from
+    // "no drag deltas for 220ms" which incorrectly fires when the user holds
+    // the mouse button without moving. Only fire if we actually dragged
+    // (not for a quick click that didn't cross the drag threshold).
+    if (wasMoved) window.spriteEvents?.dragEnd();
   }
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
