@@ -13,6 +13,103 @@ Nothing yet.
 
 ---
 
+## [0.4.0] — 2026-05-19
+
+Big plumbing release. Two headline features:
+
+1. **Extensions system** — every Merlin behavior is now a togglable flag.
+   28 flags across Drag / Brain / Animation / Voice / Visual / System
+   categories, plus two select-type flags for picking which animation
+   plays on drag start and drag end. New "Extensions" section in
+   Settings (deep-linked from a tray menu entry). Zero behavior change
+   for existing users — defaults match v0.3.x.
+2. **Brain controller interface scaffolding** — the autonomous loop is
+   now behind a swappable `BrainController` interface. The existing
+   timer-based logic is the `'default'` controller. v0.5.0 will register
+   `'local-llm'` (Ollama-driven) and `'hermes'` (Hermes Agent-driven)
+   factories with no further interface changes.
+
+Plus three bundled UX fixes for chat-style toggling that landed alongside.
+
+### Added
+
+- **`Extensions` settings section + tray menu entry** with 28 flags
+  grouped by category. Booleans for on/off toggles (sway, halo, sleep
+  timer, idle thoughts, etc.); select-type flags for *which* animation
+  Merlin plays on drag start and drag end (default: MoveUp / auto-idle).
+- **Shared catalog** at `src/shared/extensions-catalog.ts` is the single
+  source of truth for the flag list — both the renderer UI and the
+  main-process gate sites import from it.
+- **Synchronous `isEnabled()` / `getValue()` API** in `src/main/extensions.ts`
+  with a module-level cache, warmed at boot, invalidated when the user
+  toggles a flag in Settings. Reads from hot paths (drag deltas at 30Hz,
+  animation cycle ticks) cost an object lookup.
+- **Body data-flag CSS gates** in the sprite renderer — drag visuals
+  (scale, shadow, sway tilt) gate via `body[data-flag-drag-*]` attributes
+  set from the live extensions snapshot. New `IPC.spriteSetExtensions`
+  channel pushes updates to the renderer without a window reload.
+- **Brain controller interface** at `src/main/brainControllers/types.ts`
+  defining `BrainController`, `BrainContext`, and `BrainControllerFactory`.
+  `BrainContext` exposes capabilities (sensing + acting) to controllers
+  in a flag-aware way — calls to `wanderRandom()` / `emitIdleThought()`
+  silently no-op if the matching flag is off (unless
+  `behavior.brain_controller.allow_override_actions` is on).
+- **`brainSupervisor.ts`** holds the active controller + singleton
+  `BrainContext`. `startActiveBrain()` / `stopActiveBrain()` /
+  `swapBrain()`. Hot-swap on `settingsSet` when `brainController` changes.
+- **`'default'` controller** at `src/main/brainControllers/defaultBrain.ts`
+  wraps the original `brain.ts` 60s tick logic. Identical behavior to v0.3.x.
+- **`applyChatStyle()` helper** at `src/main/chatSurface.ts` — centralizes
+  the Classic ↔ Modern chat-style toggle. Both the tray-menu radio and
+  the settings IPC dispatch route through here, with hide-old-then-await-
+  then-show-new sequencing so the two surfaces can't briefly co-render.
+
+### Changed
+
+- **Tray menu**: "Display mode" → **"Chat Style"** (pure rename; store
+  key stays `displayMode`). Settings UI checkbox-row description
+  rephrased accordingly.
+- **Hide Merlin now hides the chat surface too** — bubble or panel
+  hide alongside the sprite when you click "Hide Merlin" in the tray.
+  Exception: if the user has focus in a chat input (typing or just-
+  typed), the surface stays put so they don't lose their unsent text.
+  Show Merlin re-opens whichever surface was visible before hide.
+- **`brain.ts` is now a back-compat shim** re-exporting from the
+  supervisor — existing callers (`markInteraction`,
+  `noteIdleThoughtDismissed`, `startBrain`, `stopBrain`) still work
+  unchanged.
+- **`spriteGetInitial` payload** extended with `extensions` so the
+  renderer can apply CSS gates from the first paint, no flash.
+- **`StoreData` schema** gained three new top-level keys: `extensions`,
+  `brainController`, `brainControllerConfig`. Existing keys
+  (`idleThoughtsEnabled`, `showWelcomeOnStart`, `speakWelcome`,
+  `screenshotHotkeyEnabled`, `autoStart`) are read at boot to seed the
+  new `extensions` cache for backwards-compat. Left in the store as
+  zombie fields until v0.6.0.
+
+### Fixed
+
+- **Both chat surfaces could briefly render simultaneously** during a
+  Classic↔Modern toggle. Hide-old-await-then-show-new sequencing in
+  `applyChatStyle()` eliminates the race.
+- **Hide Merlin previously left the chat surface visible.** Now they
+  hide together (focus-preserving).
+
+### Migration notes
+
+- All defaults are `true`/canonical — `extensions: {}` in the store
+  means "use catalog defaults", so existing users open v0.4.0 with
+  identical behavior.
+- Legacy boolean keys are migrated on first boot:
+  `idleThoughtsEnabled` → `behavior.brain.idle_thoughts`,
+  `showWelcomeOnStart` → `behavior.voice.welcome`,
+  `speakWelcome` → `behavior.voice.welcome_spoken`.
+- v0.5.0 will deliver the actual `'local-llm'` and `'hermes'` brain
+  controllers as new factories registered in
+  `src/main/brainControllers/registry.ts`. The interface is locked.
+
+---
+
 ## [0.3.1] — 2026-05-17
 
 Hotfix: tray menu was missing the ElevenLabs option added in `0.3.0`.
@@ -370,7 +467,8 @@ to <https://github.com/therealgorgan/merlin-the-wizard>.
 - `docs/integrating-hermes.md` (scrubbed of any private IPs/tokens)
 - Public GitHub repo at <https://github.com/therealgorgan/merlin-the-wizard>
 
-[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.1.0...v0.2.0

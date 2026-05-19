@@ -7,6 +7,7 @@ import {
 } from './windows/chatPanelWindow';
 import { read as readStore } from './storage/store';
 import { speak as ttsSpeak } from './voice/tts';
+import { isEnabled } from './extensions';
 import { logger } from './logger';
 
 const WELCOME_DURATION_MS = 12_000;
@@ -109,8 +110,8 @@ export async function playWelcome(): Promise<void> {
     return;
   }
   const settings = await readStore();
-  if (!settings.showWelcomeOnStart) {
-    logger.info('Welcome skipped (showWelcomeOnStart is false)');
+  if (!isEnabled('behavior.voice.welcome')) {
+    logger.info('Welcome skipped (behavior.voice.welcome is off)');
     return;
   }
 
@@ -136,7 +137,7 @@ export async function playWelcome(): Promise<void> {
       // Classic mode: floating speech bubble next to the sprite.
       showBubble(bubble, { mode: 'read', durationMs: WELCOME_DURATION_MS });
     }
-    if (settings.speakWelcome && settings.voiceEngine !== 'off') {
+    if (isEnabled('behavior.voice.welcome_spoken') && settings.voiceEngine !== 'off') {
       void ttsSpeak(spoken);
     }
   }, 600);

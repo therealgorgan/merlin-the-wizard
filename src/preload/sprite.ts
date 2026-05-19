@@ -60,7 +60,16 @@ const api: SpriteApi = {
       muteSounds: boolean;
       character: string;
       appearance: 'classic' | 'retouched';
+      extensions: Record<string, boolean | string>;
     }>,
+  onSetExtensions(cb) {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      flags: Record<string, boolean | string>,
+    ): void => cb(flags);
+    ipcRenderer.on(IPC.spriteSetExtensions, handler);
+    return () => ipcRenderer.off(IPC.spriteSetExtensions, handler);
+  },
   reportAnimationDone(_name: AnimationName) {
     // No-op for Phase 1.
   },

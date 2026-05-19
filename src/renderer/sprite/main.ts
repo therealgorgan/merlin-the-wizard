@@ -35,6 +35,23 @@ function applyAppearance(appearance: 'classic' | 'retouched'): void {
   document.body.dataset.appearance = appearance;
 }
 
+/** Apply feature-flag snapshot to body data attributes. CSS uses these to
+ *  gate purely-visual effects like sway/scale/shadow during drag. Boolean
+ *  flags map to data-flag-<short-key>="true"/"false". String/select flags
+ *  are exposed too for future CSS hooks. */
+function applyExtensions(flags: Record<string, boolean | string>): void {
+  const set = (shortKey: string, value: boolean | string): void => {
+    document.body.dataset[`flag${shortKey}`] = String(value);
+  };
+  // Drag visuals — these are the renderer-side gates that matter today.
+  if ('behavior.drag.sway' in flags) set('DragSway', flags['behavior.drag.sway']!);
+  if ('behavior.drag.scale' in flags) set('DragScale', flags['behavior.drag.scale']!);
+  if ('behavior.drag.shadow' in flags) set('DragShadow', flags['behavior.drag.shadow']!);
+  if ('behavior.voice.auto_mute_sfx_during_tts' in flags) {
+    set('AutoMuteSfx', flags['behavior.voice.auto_mute_sfx_during_tts']!);
+  }
+}
+
 let mediaMuted = false;
 // Auto-mute flag — set true while TTS audio is queued/playing so animation
 // sounds (clippyjs sound-bank effects baked into each Merlin animation)
@@ -47,7 +64,10 @@ HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
   const isVoice = (this as MaybeVoice).__merlinVoice === true;
   // Voice always plays. Non-voice (animation SFX) is gated by both the
   // user's mute setting AND the in-flight-voice auto-mute.
-  if (!isVoice && (mediaMuted || voicePlaybackActive)) {
+  // The auto-mute-during-TTS gate honors a feature flag set via body data
+  // attribute. When the flag is "false", SFX play normally even during voice.
+  const autoMuteOff = document.body.dataset.flagAutoMuteSfx === 'false';
+  if (!isVoice && (mediaMuted || (voicePlaybackActive && !autoMuteOff))) {
     return Promise.resolve();
   }
   return origMediaPlay.call(this);
@@ -270,6 +290,7 @@ void (async () => {
     applyZoom(initial.zoom);
     applyMute(initial.muteSounds);
     applyAppearance(initial.appearance || 'classic');
+    if (initial.extensions) applyExtensions(initial.extensions);
     initialCharacter = initial.character || 'Merlin';
   } catch (err) {
     console.warn('[merlin-sprite] getInitial failed, using defaults', err);
@@ -293,6 +314,7 @@ void (async () => {
     void mountCharacter(clippy, id);
   });
   api.onSetAppearance(applyAppearance);
+  api.onSetExtensions(applyExtensions);
 
   // TTS voice playback queue.
   const voiceQueue: HTMLAudioElement[] = [];

@@ -101,8 +101,14 @@ app.whenReady().then(async () => {
   setOnMoodChange(() => void rebuildTrayMenu());
   // Refresh tray Tasks count/list when tools add/complete/remove.
   setOnTasksChange(() => void rebuildTrayMenu());
-  // Start autonomous behavior loop.
-  startBrain();
+  // Warm the extensions-flag cache so isEnabled() works synchronously
+  // everywhere from here on. Done BEFORE startBrain so the controller's
+  // first tick sees fresh flags.
+  const { warmExtensionsCache } = await import('./extensions');
+  await warmExtensionsCache();
+  // Start the active brain controller (default = timer-based; future
+  // 0.5.0 versions register local-llm + hermes controllers in the registry).
+  await startBrain();
   // Global summon hotkey (Ctrl+Shift+M by default).
   await registerSummonHotkey();
   // Global screenshot hotkey (Ctrl+Shift+S by default).

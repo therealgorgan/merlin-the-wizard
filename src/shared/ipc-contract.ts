@@ -20,6 +20,9 @@ export const IPC = {
   spriteSetCharacter: 'sprite:setCharacter',
   spriteSetAppearance: 'sprite:setAppearance',
   spriteGetInitial: 'sprite:getInitial',
+  /** Main → sprite renderer: push current extension flag values so renderer */
+  /** can apply CSS-side gates (e.g. data-flag-drag-sway). Fired on settingsSet. */
+  spriteSetExtensions: 'sprite:setExtensions',
 
   // bubble
   bubbleShow: 'bubble:show',
@@ -127,7 +130,11 @@ export interface SpriteApi {
     muteSounds: boolean;
     character: string;
     appearance: 'classic' | 'retouched';
+    /** Snapshot of all extension flags so renderer can wire CSS gates up-front. */
+    extensions: Record<string, boolean | string>;
   }>;
+  /** Subscribe to live updates of extension flags from main. */
+  onSetExtensions: (cb: (flags: Record<string, boolean | string>) => void) => () => void;
   /** Tells main this animation has finished playing. */
   reportAnimationDone: (name: AnimationName) => void;
   /** Drag the window by delta (main moves the window). */
@@ -202,6 +209,12 @@ export interface StoreSnapshot {
   screenshotHotkeyEnabled: boolean;
   displayMode: 'classic' | 'modern';
   appearance: 'classic' | 'retouched';
+  /** Per-behavior feature flags (extensions). Boolean or string by flag kind. */
+  extensions: Record<string, boolean | string>;
+  /** Active brain controller id. */
+  brainController: string;
+  /** Per-controller config map. */
+  brainControllerConfig: Record<string, Record<string, unknown>>;
 }
 
 export interface PanelChatTurn {

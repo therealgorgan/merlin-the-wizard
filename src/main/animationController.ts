@@ -9,6 +9,7 @@ import {
 } from './windows/spriteWindow';
 import { getActiveSpriteHost } from './activeSurface';
 import { getMood, type Mood } from './feelings';
+import { getValue, isEnabled } from './extensions';
 import { logger } from './logger';
 
 // Central animation brain. Five jobs:
@@ -280,7 +281,8 @@ const PALETTES: Record<Mood, MoodPalette> = {
 };
 
 async function palette(): Promise<MoodPalette> {
-  const m = await getMood();
+  // If mood palettes are disabled, always use cheerful.
+  const m = isEnabled('behavior.animation.mood_palettes') ? await getMood() : 'cheerful';
   // Mood-driven base palette. Time-of-day + energy can TILT picks toward
   // calmer or peppier gestures, but only at clear thresholds so the moods
   // don't all blur into "sleepy" after a few hours of idle.
@@ -290,6 +292,9 @@ async function palette(): Promise<MoodPalette> {
   const highEnergy = energy >= 70;
   const lateNight = tod === 'night';
 
+  // If energy modulation is disabled, skip both the sleepy and peppy tilts —
+  // mood (or cheerful, if mood is also off) is the only signal.
+  if (!isEnabled('behavior.animation.energy_modulation')) return base;
   // Only inject sleepy gestures when BOTH conditions hit (low energy AND late
   // night) — single condition alone isn't enough to override Merlin's actual
   // mood. Prevents the "sleepy fidgets all morning because he didn't sleep"
@@ -338,6 +343,7 @@ function clearSpeakingTimer(): void {
 
 function scheduleNextSpeakingGesture(): void {
   clearSpeakingTimer();
+  if (!isEnabled('behavior.animation.speaking_cycle')) return;
   // High energy = more frequent gestures (~4-7s). Low energy = sparser (~7-12s).
   const e = energyFactor();
   const base = SPEAKING_GESTURE_MIN_MS + (1 - e) * 3_000;
@@ -384,6 +390,7 @@ function clearThinkingTimer(): void {
 
 function scheduleNextThinkingGesture(): void {
   clearThinkingTimer();
+  if (!isEnabled('behavior.animation.thinking_cycle')) return;
   const ms = THINKING_GESTURE_MIN_MS + Math.random() * (THINKING_GESTURE_MAX_MS - THINKING_GESTURE_MIN_MS);
   thinkingTimer = setTimeout(() => {
     thinkingTimer = null;
@@ -409,6 +416,7 @@ function clearSleepTimer(): void {
 function armSleepTimer(): void {
   clearSleepTimer();
   if (intent !== 'idle') return;
+  if (!isEnabled('behavior.brain.sleep_timer')) return;
   sleepTimer = setTimeout(() => {
     sleepTimer = null;
     if (intent !== 'idle') return;
@@ -547,6 +555,7 @@ function scheduleNextEyeCheck(): void {
 
 function tickEyeTracking(): void {
   if (intent !== 'idle') return;
+  if (!isEnabled('behavior.brain.eye_tracking')) return;
   const w = getSpriteWindow();
   if (!w) return;
   const [sx, sy] = w.getPosition();
@@ -630,7 +639,10 @@ export function reactToDoubleClick(): void {
   touchInteraction();
   if (intent === 'sleeping') return; // wakeIfSleeping handles the gesture + return-to-idle
   setIntent('reacting', 'double-click');
-  const pick = pickAnim(DOUBLE_CLICK_ANIMATIONS) ?? 'Pleased';
+  // If random-pool is disabled, fall back to a single canonical anim.
+  const pick = isEnabled('behavior.animation.double_click_random')
+    ? (pickAnim(DOUBLE_CLICK_ANIMATIONS) ?? 'Pleased')
+    : 'Pleased';
   send(pick, { important: true });
   scheduleReactionFinish(1800);
 }
@@ -680,7 +692,13 @@ export function reactToDrag(dx: number, dy: number): void {
   if (dragAnimStarted) return;
   if (Math.hypot(dragAccumDx, dragAccumDy) < DRAG_START_THRESHOLD_PX) return;
   dragAnimStarted = true;
-  send(DRAG_ANIMATION, { important: true });
+  // Drag start animation is a user-choosable select (default MoveUp). 'none'
+  // means skip the animation entirely while still firing the CSS effects
+  // (sway/scale/shadow) — those gate via separate flags.
+  const startAnim = getValue('behavior.drag.start_animation');
+  if (startAnim && startAnim !== 'none' && isAnimationName(startAnim)) {
+    send(startAnim, { important: true });
+  }
 }
 
 /** Drag finished. Let any in-flight MoveUp continue playing — interrupting */
@@ -692,10 +710,19 @@ export function reactToDragEnd(): void {
   resetDragSession();
   if (intent === 'reacting') {
     setIntent('idle', 'drag-end');
+    // Drag end animation is a user-choosable select. 'auto-idle' = pick from
+    // IDLE_ANIMATIONS (original behavior). 'none' = no follow-up. Anything
+    // else = play that specific animation by name.
+    const endChoice = getValue('behavior.drag.end_animation');
+    if (endChoice === 'none') return;
     setTimeout(() => {
       if (intent !== 'idle') return;
-      const idle = pickAnim(IDLE_ANIMATIONS);
-      if (idle) send(idle);
+      if (endChoice === 'auto-idle' || !endChoice) {
+        const idle = pickAnim(IDLE_ANIMATIONS);
+        if (idle) send(idle);
+      } else if (isAnimationName(endChoice)) {
+        send(endChoice);
+      }
     }, 1500);
   }
 }
@@ -708,7 +735,11 @@ export function repeatLastDragAnim(): void {
   if (intent === 'hidden') return;
   if (!dragAnimStarted) return;
   if (intent === 'thinking' || intent === 'speaking' || intent === 'doing') return;
-  send(DRAG_ANIMATION, { important: true });
+  // Re-fire whichever start animation the user chose (heartbeat repeats it).
+  const startAnim = getValue('behavior.drag.start_animation');
+  if (startAnim && startAnim !== 'none' && isAnimationName(startAnim)) {
+    send(startAnim, { important: true });
+  }
 }
 
 /** Mouse wheel zoom — playful Surprised reaction. */
@@ -717,6 +748,7 @@ export function reactToZoom(): void {
   touchInteraction();
   if (intent === 'sleeping') return;
   if (intent !== 'idle' && intent !== 'reacting') return;
+  if (!isEnabled('behavior.animation.zoom_reaction')) return;
   setIntent('reacting', 'zoom');
   // Throttled: rapid wheel ticks would otherwise queue up Surprised's.
   send('Surprised');
@@ -780,6 +812,7 @@ const TOOL_ANIMATION_MAP: Record<string, AnimationName> = {
 
 export function toolStart(toolName: string): void {
   if (intent === 'hidden') return;
+  if (!isEnabled('behavior.animation.tool_reactions')) return;
   const anim = TOOL_ANIMATION_MAP[toolName];
   if (!anim) return;
   send(anim, { important: true });
@@ -788,6 +821,7 @@ export function toolStart(toolName: string): void {
 /** Tool finished — celebrate or commiserate based on success. */
 export async function toolFinish(_toolName: string, ok: boolean): Promise<void> {
   if (intent === 'hidden') return;
+  if (!isEnabled('behavior.animation.tool_reactions')) return;
   // Don't fire success/failure gestures during speaking — they'd preempt the
   // speaking cycle visibly. Tools usually finish before speaking starts; this
   // guard is for unusual orderings.
@@ -803,6 +837,7 @@ export async function toolFinish(_toolName: string, ok: boolean): Promise<void> 
 /** Called from interaction.ts when the user submits. */
 export async function contentReaction(userText: string): Promise<void> {
   if (intent === 'hidden') return;
+  if (!isEnabled('behavior.animation.content_reactions')) return;
   const t = userText.toLowerCase().trim();
   if (!t) return;
   const pal = await palette();
@@ -822,20 +857,50 @@ export async function contentReaction(userText: string): Promise<void> {
 
 // ── Public API: VISIBILITY / FOCUS ──────────────────────────────────────────
 
+// Track which chat surfaces were visible at the moment of hide() so the
+// matching surfaces can be restored on show(). Without this, a Hide → Show
+// cycle would never bring back the panel/bubble even if the user expects it.
+let wasVisibleBeforeHide: { bubble: boolean; panel: boolean } = {
+  bubble: false,
+  panel: false,
+};
+
 export async function setHidden(): Promise<void> {
   clearSpeakingTimer();
   setIntent('hidden', 'hide');
+  // Also hide the chat surfaces (bubble / panel) unless the user is
+  // currently focused in one — losing their unsent text would be infuriating.
+  // Remember which surfaces were visible so setVisible() can restore them.
+  const { getBubbleWindow, hideBubble } = await import('./windows/bubbleWindow');
+  const { getChatPanelWindow, hideChatPanel } = await import('./windows/chatPanelWindow');
+  const bubble = getBubbleWindow();
+  const panel = getChatPanelWindow();
+  wasVisibleBeforeHide = {
+    bubble: Boolean(bubble && bubble.isVisible()),
+    panel: Boolean(panel && panel.isVisible()),
+  };
+  if (bubble && bubble.isVisible() && !bubble.isFocused()) hideBubble();
+  if (panel && panel.isVisible() && !panel.isFocused()) hideChatPanel();
   await hideMerlinWithAnimation();
 }
 
 export async function setVisible(): Promise<void> {
   if (intent === 'hidden') setIntent('idle', 'show');
   await showMerlinWithAnimation();
+  // Re-show whichever chat surface was visible when we hid. The bubble is
+  // ephemeral (re-appears on its own via showBubble), so we don't proactively
+  // re-show it. The panel is persistent though — bring it back if it was up.
+  if (wasVisibleBeforeHide.panel) {
+    const { showChatPanel } = await import('./windows/chatPanelWindow');
+    showChatPanel();
+  }
+  wasVisibleBeforeHide = { bubble: false, panel: false };
 }
 
 /** App lost focus — Merlin glances away (subtle, not always). */
 export function reactToAppBlur(): void {
   if (intent !== 'idle') return;
+  if (!isEnabled('behavior.brain.app_blur_reaction')) return;
   // 40% chance, modulated by energy — sleepy Merlin doesn't bother.
   if (Math.random() > 0.4 * energyFactor()) return;
   setIntent('reacting', 'app-blur');
@@ -851,6 +916,7 @@ export async function reactToAppFocus(): Promise<void> {
     return;
   }
   if (intent !== 'idle' && intent !== 'reacting') return;
+  if (!isEnabled('behavior.brain.app_focus_reaction')) return;
   // Only ~30% of focus events trigger a reaction — otherwise too distracting.
   if (Math.random() > 0.3) return;
   const pal = await palette();
@@ -865,7 +931,9 @@ export async function reactToAppFocus(): Promise<void> {
 export function nudgeForIdleThought(): void {
   if (intent !== 'idle') return;
   setIntent('reacting', 'idle-thought-nudge');
-  void wiggleSprite();
+  if (isEnabled('behavior.visual.wiggle_on_nudge')) {
+    void wiggleSprite();
+  }
   send('GetAttention', { important: true });
   scheduleReactionFinish(1800);
 }

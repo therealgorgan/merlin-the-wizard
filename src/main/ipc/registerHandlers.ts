@@ -1,5 +1,5 @@
 import { ipcMain, shell } from 'electron';
-import { IPC } from '@shared/ipc-contract';
+import { IPC, type StoreSnapshot } from '@shared/ipc-contract';
 import { type AnimationName, isAnimationName } from '@shared/animations';
 import {
   createSpriteWindow,
@@ -77,11 +77,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.spriteGetInitial, async () => {
     const s = await readStore();
     const { resolveSpriteId } = await import('../customCharacters');
+    const { snapshotForRenderer } = await import('../extensions');
     return {
       zoom: typeof s.zoom === 'number' ? s.zoom : 1.0,
       muteSounds: Boolean(s.muteSounds),
       character: resolveSpriteId(s.character || 'Merlin'),
       appearance: s.appearance === 'retouched' ? 'retouched' as const : 'classic' as const,
+      extensions: snapshotForRenderer(),
     };
   });
 
@@ -290,16 +292,7 @@ export function registerIpcHandlers(): void {
 
   // ----- Settings IPC -----
 
-  const snapshot = (s: StoreData): {
-    llmProvider: string; llmModel: string; ollamaEndpoint: string;
-    hermesEndpoint: string;
-    voiceEngine: string; voiceName: string; character: string;
-    userName: string | null; summonHotkey: string; autoStart: boolean;
-    idleThoughtsEnabled: boolean; showWelcomeOnStart: boolean; speakWelcome: boolean;
-    screenshotHotkey: string; screenshotHotkeyEnabled: boolean;
-    displayMode: 'classic' | 'modern';
-    appearance: 'classic' | 'retouched';
-  } => ({
+  const snapshot = (s: StoreData): StoreSnapshot => ({
     llmProvider: s.llmProvider,
     llmModel: s.llmModel,
     ollamaEndpoint: s.ollamaEndpoint,
@@ -317,6 +310,9 @@ export function registerIpcHandlers(): void {
     screenshotHotkeyEnabled: s.screenshotHotkeyEnabled,
     displayMode: s.displayMode,
     appearance: s.appearance === 'retouched' ? 'retouched' : 'classic',
+    extensions: s.extensions ?? {},
+    brainController: s.brainController ?? 'default',
+    brainControllerConfig: s.brainControllerConfig ?? {},
   });
 
   ipcMain.handle(IPC.settingsGet, async () => snapshot(await readStore()));
@@ -368,18 +364,28 @@ export function registerIpcHandlers(): void {
     }
     if (patch.displayMode !== undefined && patch.displayMode !== prev.displayMode) {
       logger.info('displayMode ->', patch.displayMode);
-      if (patch.displayMode === 'modern') {
-        // Modern: sprite stays free-floating; panel docks alongside.
-        const sw = getSpriteWindow() ?? (await createSpriteWindow());
-        sw.show();
-        hideBubble();
-        showChatPanel();
-      } else {
-        // Classic: hide the panel, sprite continues to float.
-        hideChatPanel();
-        const sw = getSpriteWindow() ?? (await createSpriteWindow());
-        sw.show();
-      }
+      // Route through the shared helper so the tray-toggle path and the
+      // settings-IPC path can't fight each other. Helper handles
+      // hide-old-then-await-then-show-new + ensures sprite is visible.
+      const { applyChatStyle } = await import('../chatSurface');
+      await applyChatStyle(patch.displayMode);
+    }
+    if (patch.extensions !== undefined) {
+      // Invalidate the sync cache so the next isEnabled()/getValue() reads
+      // fresh values. Then broadcast the new flag snapshot to the sprite
+      // renderer so CSS-side gates (drag halo, sway, etc.) update without
+      // a window reload.
+      const { invalidateExtensionsCache, snapshotForRenderer, warmExtensionsCache } =
+        await import('../extensions');
+      invalidateExtensionsCache();
+      await warmExtensionsCache();
+      const sprite3 = getSpriteWindow();
+      sprite3?.webContents.send(IPC.spriteSetExtensions, snapshotForRenderer());
+    }
+    if (patch.brainController !== undefined && patch.brainController !== prev.brainController) {
+      logger.info('brainController ->', patch.brainController);
+      const { swapBrain } = await import('../brainSupervisor');
+      await swapBrain();
     }
 
     return snapshot(updated);

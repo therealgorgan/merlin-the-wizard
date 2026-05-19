@@ -1,6 +1,6 @@
 {
   "name": "merlin-the-wizard",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Windows 11 desktop companion that recreates the Microsoft Agent Merlin sprite as a modern LLM-backed assistant. Multi-provider (Groq, OpenRouter, Ollama, MiniMax, Hermes Agent), voice in/out, screen capture, web search, custom characters.",
   "main": "out/main/index.js",
   "author": "therealgorgan",

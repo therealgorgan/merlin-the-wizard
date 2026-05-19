@@ -44,6 +44,15 @@ export interface StoreData {
   displayMode: 'classic' | 'modern';
   /** 'classic' (pixelated retro sprites) | 'retouched' (CSS-smoothed for modern feel) */
   appearance: 'classic' | 'retouched';
+  /** Per-behavior feature flags (0.4.0+). Keyed by extension flag id (e.g. */
+  /** `behavior.drag.sway`). Missing key = use default from extensions catalog. */
+  /** Values are boolean | string (booleans for on/off toggles, strings for */
+  /** select-type flags like which drag animation to play). */
+  extensions: Record<string, boolean | string>;
+  /** Active brain controller id (0.4.0 ships only 'default'; 0.5.0 adds 'local-llm' / 'hermes'). */
+  brainController: string;
+  /** Per-controller configuration map. Outer key = controller id, inner = arbitrary settings. */
+  brainControllerConfig: Record<string, Record<string, unknown>>;
 }
 
 const DEFAULTS: StoreData = {
@@ -68,6 +77,9 @@ const DEFAULTS: StoreData = {
   screenshotHotkeyEnabled: true,
   displayMode: 'classic',
   appearance: 'classic',
+  extensions: {},
+  brainController: 'default',
+  brainControllerConfig: {},
 };
 
 let cache: StoreData | null = null;

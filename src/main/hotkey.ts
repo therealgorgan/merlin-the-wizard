@@ -4,6 +4,7 @@ import { createSpriteWindow, getSpriteWindow, showSprite } from './windows/sprit
 import { openAskBubble } from './interaction';
 import { read as readStore } from './storage/store';
 import { captureCurrentScreen } from './screenCapture';
+import { isEnabled } from './extensions';
 import { logger } from './logger';
 
 let registered: string | null = null;
@@ -19,6 +20,17 @@ async function fire(): Promise<void> {
 export async function registerSummonHotkey(): Promise<void> {
   const settings = await readStore();
   const accel = settings.summonHotkey?.trim() || 'Control+Shift+M';
+
+  // If summon hotkey is disabled via extensions, ensure any previously
+  // registered hotkey is released and skip re-registration.
+  if (!isEnabled('behavior.system.summon_hotkey')) {
+    if (registered) {
+      globalShortcut.unregister(registered);
+      registered = null;
+      logger.info('Summon hotkey released (behavior.system.summon_hotkey is off)');
+    }
+    return;
+  }
 
   if (registered === accel) return;
   if (registered) {

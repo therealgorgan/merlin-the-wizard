@@ -155,6 +155,26 @@ section h2 {
   flex: 0 0 auto;
   margin: 0;
 }
+
+/* Extensions section — subtle grouping headers + per-row descriptions. */
+.extensions-group { margin-top: 12px; }
+.extensions-group-title {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #8a8a92;
+  border-bottom: 1px solid #2c2c34;
+  padding-bottom: 4px;
+  margin: 14px 0 6px 0;
+}
+.row .ext-desc {
+  flex: 1 0 100%;
+  margin-top: 2px;
+  padding-left: 8px;
+  font-size: 11px;
+  color: #8a8a92;
+  font-style: italic;
+}
 .row input,
 .row select {
   flex: 1 1 auto;

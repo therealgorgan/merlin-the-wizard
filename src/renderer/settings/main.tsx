@@ -7,6 +7,7 @@ import type {
   SapiVoiceForUi,
 } from '@shared/ipc-contract';
 import { EDGE_VOICES } from '@shared/edge-voices';
+import { EXTENSIONS_CATALOG } from '@shared/extensions-catalog';
 
 declare global {
   interface Window {
@@ -760,6 +761,80 @@ function App(): React.ReactElement {
               Start with Windows
             </label>
           </div>
+        </section>
+
+        <section id="extensions">
+          <h2>Extensions</h2>
+          <div className="status">
+            Toggle individual Merlin behaviors. Defaults match the experience you
+            get with everything on. Changes apply immediately — no restart needed.
+          </div>
+          {Array.from(
+            EXTENSIONS_CATALOG.reduce<Map<string, typeof EXTENSIONS_CATALOG[number][]>>(
+              (acc, flag) => {
+                const list = acc.get(flag.group) ?? [];
+                list.push(flag);
+                acc.set(flag.group, list);
+                return acc;
+              },
+              new Map(),
+            ).entries(),
+          ).map(([group, flags]) => (
+            <div key={group} className="extensions-group">
+              <h3 className="extensions-group-title">{group}</h3>
+              {flags.map((flag) => {
+                const stored = settings.extensions?.[flag.key];
+                const current = stored !== undefined ? stored : flag.default;
+                if (flag.kind === 'boolean') {
+                  return (
+                    <div key={flag.key} className="row">
+                      <label htmlFor={`ext-${flag.key}`}>
+                        <input
+                          id={`ext-${flag.key}`}
+                          type="checkbox"
+                          checked={current === true}
+                          onChange={(e) =>
+                            void update({
+                              extensions: {
+                                ...(settings.extensions ?? {}),
+                                [flag.key]: e.target.checked,
+                              },
+                            })
+                          }
+                        />{' '}
+                        {flag.label}
+                      </label>
+                      <div className="status ext-desc">{flag.description}</div>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={flag.key} className="row">
+                    <label htmlFor={`ext-${flag.key}`}>{flag.label}</label>
+                    <select
+                      id={`ext-${flag.key}`}
+                      value={typeof current === 'string' ? current : flag.default}
+                      onChange={(e) =>
+                        void update({
+                          extensions: {
+                            ...(settings.extensions ?? {}),
+                            [flag.key]: e.target.value,
+                          },
+                        })
+                      }
+                    >
+                      {flag.options.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="status ext-desc">{flag.description}</div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </section>
 
         <section>

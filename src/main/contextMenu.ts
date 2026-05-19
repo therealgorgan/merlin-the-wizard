@@ -277,19 +277,15 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
     { label: 'Hide Merlin', click: () => hideSprite() },
     { label: 'Character', submenu: characterSubmenu },
     {
-      label: 'Display mode',
+      label: 'Chat Style',
       submenu: [
         {
           label: 'Classic — floating sprite + speech bubble',
           type: 'radio',
           checked: settings.displayMode === 'classic',
           click: async () => {
-            const { write } = await import('./storage/store');
-            await write({ displayMode: 'classic' });
-            const sw = getSpriteWindow();
-            sw?.show();
-            const { hideChatPanel } = await import('./windows/chatPanelWindow');
-            hideChatPanel();
+            const { applyChatStyle } = await import('./chatSurface');
+            await applyChatStyle('classic');
             await actions.onDisplayModeChange?.();
           },
         },
@@ -298,14 +294,8 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
           type: 'radio',
           checked: settings.displayMode === 'modern',
           click: async () => {
-            const { write } = await import('./storage/store');
-            await write({ displayMode: 'modern' });
-            // Keep sprite visible alongside the panel — sprite is the
-            // draggable character, panel is the chat surface.
-            const sw = getSpriteWindow() ?? (await createSpriteWindow());
-            sw.show();
-            const { showChatPanel } = await import('./windows/chatPanelWindow');
-            showChatPanel();
+            const { applyChatStyle } = await import('./chatSurface');
+            await applyChatStyle('modern');
             await actions.onDisplayModeChange?.();
           },
         },
@@ -362,6 +352,7 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
         await actions.onAutoStartChange?.();
       },
     },
+    { label: 'Extensions...', click: () => openSettingsWindow({ hash: 'extensions' }) },
     { label: 'Settings...', click: () => openSettingsWindow() },
     { label: 'Debug Panel', click: () => createDebugWindow() },
     { type: 'separator' },

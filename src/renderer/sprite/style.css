@@ -76,18 +76,34 @@ body[data-appearance='retouched'] > .clippy * {
    background-position frame swap can be deferred by the compositor
    during rapid window moves. */
 body.merlin-dragging > .clippy {
+  /* Defaults compose the full set of effects. Individual flags toggle each
+     piece off via attribute selectors below (data-flag-drag-scale="false"
+     drops the scale-up, etc.). The sway tilt CSS variable is set to 0 by
+     the renderer when sway is off, so no override needed for that one. */
   transform:
     translate(-50%, -50%)
-    scale(calc(var(--merlin-zoom, 1) * 1.08))
+    scale(calc(var(--merlin-zoom, 1) * var(--merlin-drag-scale, 1.08)))
     rotate(var(--merlin-drag-tilt, 0deg));
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55));
   transition: transform 80ms ease-out, filter 120ms ease-out;
+}
+body[data-flag-drag-scale='false'] {
+  --merlin-drag-scale: 1.0;
+}
+body[data-flag-drag-shadow='false'].merlin-dragging > .clippy {
+  filter: none;
+}
+body[data-flag-drag-sway='false'] {
+  --merlin-drag-tilt: 0deg;
 }
 body[data-appearance='retouched'].merlin-dragging > .clippy {
   filter:
     contrast(1.06)
     saturate(1.05)
     drop-shadow(0 8px 14px rgba(0, 0, 0, 0.55));
+}
+body[data-flag-drag-shadow='false'][data-appearance='retouched'].merlin-dragging > .clippy {
+  filter: contrast(1.06) saturate(1.05);
 }
 
 /* The sprite map is a CSS background-image on the clippy element's children.
