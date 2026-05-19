@@ -317,6 +317,7 @@ export function registerIpcHandlers(): void {
     extensions: s.extensions ?? {},
     brainController: s.brainController ?? 'default',
     brainControllerConfig: s.brainControllerConfig ?? {},
+    firstRunComplete: Boolean(s.firstRunComplete),
   });
 
   ipcMain.handle(IPC.settingsGet, async () => snapshot(await readStore()));
@@ -476,6 +477,22 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.brainForceTick, async (): Promise<string> => {
     const { forceTickActiveBrain } = await import('../brainSupervisor');
     return forceTickActiveBrain();
+  });
+
+  ipcMain.handle(IPC.setupWizardOpen, async () => {
+    const { openSetupWizardWindow } = await import('../windows/setupWizardWindow');
+    openSetupWizardWindow();
+  });
+  ipcMain.handle(IPC.setupWizardClose, async () => {
+    const { closeSetupWizardWindow } = await import('../windows/setupWizardWindow');
+    closeSetupWizardWindow();
+  });
+  ipcMain.handle(IPC.setupWizardComplete, async () => {
+    // Mark first-run wizard as done so it doesn't auto-pop on next launch.
+    // We do this on both "Finish" and explicit Close so the user is never
+    // nagged with a wizard they've already seen, even if they bailed out.
+    await writeStore({ firstRunComplete: true });
+    logger.info('setupWizard: firstRunComplete set');
   });
 
   ipcMain.handle(IPC.settingsOpen, () => {

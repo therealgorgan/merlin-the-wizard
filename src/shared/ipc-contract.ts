@@ -105,6 +105,11 @@ export const IPC = {
   windowDragEnd: 'window:dragEnd',
   windowClose: 'window:close',
 
+  // setup wizard (v0.5.1)
+  setupWizardOpen: 'setupWizard:open',
+  setupWizardClose: 'setupWizard:close',
+  setupWizardComplete: 'setupWizard:complete',
+
   // brain (v0.5.0)
   brainForceTick: 'brain:forceTick',
 
@@ -235,6 +240,10 @@ export interface StoreSnapshot {
   brainController: string;
   /** Per-controller config map. */
   brainControllerConfig: Record<string, Record<string, unknown>>;
+  /** True once the user has finished (or dismissed) the first-time Setup
+   *  Wizard. main/index.ts uses this to decide whether to auto-pop the
+   *  wizard 2 s after the sprite finishes its Greet on app start. */
+  firstRunComplete: boolean;
 }
 
 export interface PanelChatTurn {
@@ -435,6 +444,11 @@ export interface BrainApplyConfig {
   controllerId: 'default' | 'local-llm' | 'hermes';
   /** Per-controller config that gets merged into brainControllerConfig[id]. */
   config?: Record<string, unknown>;
+  /** Opt-in. When true AND controllerId is 'local-llm', also configure the
+   *  conversational chat LLM to use the same Ollama endpoint + model. Lets
+   *  one wizard run cover both surfaces if the user wants. Off by default
+   *  so chat config never changes by surprise. */
+  mirrorToChat?: boolean;
 }
 
 export interface BrainWizardApi {
@@ -462,6 +476,26 @@ export interface BrainWizardApi {
   hasSecret: (name: string) => Promise<boolean>;
 }
 
+// ── Setup Wizard (v0.5.1) ─────────────────────────────────────────────────
+
+export interface SetupWizardApi {
+  getSnapshot: () => Promise<StoreSnapshot>;
+  set: (patch: Partial<StoreSnapshot>) => Promise<StoreSnapshot>;
+  getProviders: () => Promise<ProviderInfoForUi[]>;
+  getCharacters: () => Promise<CharacterForUi[]>;
+  setSecret: (name: string, value: string) => Promise<void>;
+  hasSecret: (name: string) => Promise<boolean>;
+  openExternal: (url: string) => Promise<void>;
+  /** Mark the first-run wizard finished so it doesn't auto-pop again. */
+  complete: () => Promise<void>;
+  /** Close without marking complete (the wizard close also calls complete
+   *  to avoid nagging, but giving us an explicit close lets us keep the
+   *  two actions separable). */
+  close: () => void;
+  /** Open the Brain Setup Wizard (offered as an optional final step). */
+  openBrainWizard: () => Promise<void>;
+}
+
 declare global {
   interface Window {
     spriteApi?: SpriteApi;
@@ -470,5 +504,6 @@ declare global {
     debugApi?: DebugApi;
     panelApi?: PanelApi;
     brainWizardApi?: BrainWizardApi;
+    setupWizardApi?: SetupWizardApi;
   }
 }

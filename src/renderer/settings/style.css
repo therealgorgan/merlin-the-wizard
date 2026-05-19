@@ -48,6 +48,66 @@ header .subtitle {
   color: #888;
 }
 
+/* Sidebar + content split for the tabbed Settings layout. */
+.settings-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 180px;
+  flex: 0 0 180px;
+  background: #15151a;
+  border-right: 1px solid #2c2c34;
+  padding: 12px 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  color: #b0b0b8;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #e8e8ec;
+}
+
+.sidebar-item.active {
+  background: rgba(90, 131, 209, 0.15);
+  color: #e8e8ec;
+  border-left-color: #5a83d1;
+  font-weight: 600;
+}
+
+.sidebar-icon {
+  font-size: 16px;
+  width: 18px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.sidebar-label {
+  flex: 1 1 auto;
+}
+
 main {
   flex: 1;
   overflow-y: auto;

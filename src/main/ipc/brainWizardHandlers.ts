@@ -527,6 +527,18 @@ async function applyBrainConfig(cfg: BrainApplyConfig): Promise<void> {
   if (cfg.controllerId === 'hermes' && cfg.config?.['endpoint']) {
     patch.hermesEndpoint = String(cfg.config['endpoint']);
   }
+  // Optional mirror-to-chat: configure the conversational LLM to use the same
+  // Ollama model. Only meaningful when controllerId is 'local-llm' (Hermes
+  // mirroring is also valid but would require more wiring — defer).
+  if (cfg.mirrorToChat && cfg.controllerId === 'local-llm' && cfg.config) {
+    const model = cfg.config['model'];
+    if (typeof model === 'string' && model.trim()) {
+      patch.llmProvider = 'ollama';
+      patch.llmModel = model.trim();
+      // ollamaEndpoint was already set above from the brain config.
+      logger.info(`brainWizard.apply: mirroring brain model "${model}" to chat as Ollama provider`);
+    }
+  }
   await writeStore(patch);
   logger.info('brainWizard.apply: controller ->', cfg.controllerId);
   await swapBrain();

@@ -139,6 +139,20 @@ app.whenReady().then(async () => {
     // Boot eye-tracking + sleep timer once the sprite is up. (These reach
     // the active surface via getActiveSpriteHost so they work in modern too.)
     startProactiveBehaviors();
+
+    // First-time Setup Wizard: auto-pop ~2s after the sprite plays Greet so
+    // the user gets the "oh, there's Merlin!" moment before any config UI.
+    // Suppressed once the user has finished (or dismissed) the wizard via
+    // the firstRunComplete store flag.
+    if (!settings.firstRunComplete) {
+      logger.info('first run detected — auto-launching Setup Wizard in 3.5s');
+      setTimeout(() => {
+        void (async (): Promise<void> => {
+          const { openSetupWizardWindow } = await import('./windows/setupWizardWindow');
+          openSetupWizardWindow();
+        })();
+      }, 3_500);
+    }
   });
 
   // App-level focus changes: Merlin glances away when the user switches to

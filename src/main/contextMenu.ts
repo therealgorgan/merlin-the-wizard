@@ -345,39 +345,8 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
               ? 'Voice: ElevenLabs'
               : 'Voice: Off';
 
-  return Menu.buildFromTemplate([
-    { label: aiStatus, enabled: false },
-    ...(hermesActive
-      ? ([{ label: 'Hermes profile', submenu: hermesSubmenu }] as MenuItemConstructorOptions[])
-      : []),
-    { label: moodStatus, enabled: false },
-    { label: voiceLabel, enabled: false },
-    { type: 'separator' },
-    { label: 'Ask Merlin... (chat)', click: () => actions.askMerlin() },
-    {
-      label: `Tasks (${tasks.length})`,
-      submenu: tasksSubmenu,
-    },
-    { label: 'Conversation History...', click: () => openHistoryWindow() },
-    {
-      label: 'Forget Conversation',
-      click: async () => {
-        await forgetConversation();
-      },
-    },
-    {
-      label: 'Stop Voice',
-      click: () => cancelVoice(),
-    },
-    { type: 'separator' },
-    {
-      label: 'Show Merlin',
-      click: async () => {
-        if (!getSpriteWindow()) await createSpriteWindow();
-        else showSprite();
-      },
-    },
-    { label: 'Hide Merlin', click: () => hideSprite() },
+  // Submenus collected so the top-level menu reads as a short list.
+  const customizeSubmenu: MenuItemConstructorOptions[] = [
     { label: 'Character', submenu: characterSubmenu },
     {
       label: 'Chat Style',
@@ -433,18 +402,7 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
         },
       ],
     },
-    { label: 'Play Animation', submenu: buildAnimationSubmenu() },
-    { label: 'Size', submenu: sizeSubmenu },
-    {
-      label: 'Mute Sound Effects',
-      type: 'checkbox',
-      checked: muted,
-      click: async (item) => {
-        await setMuteSounds(item.checked);
-        await actions.onMuteChange?.();
-      },
-    },
-    { label: 'Voice', submenu: voiceSubmenu },
+    { label: 'Voice engine', submenu: voiceSubmenu },
     { type: 'separator' },
     {
       label: 'Start with Windows',
@@ -455,10 +413,78 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
         await actions.onAutoStartChange?.();
       },
     },
+  ];
+
+  const developerSubmenu: MenuItemConstructorOptions[] = [
+    { label: 'Conversation History...', click: () => openHistoryWindow() },
+    {
+      label: 'Forget Conversation',
+      click: async () => {
+        await forgetConversation();
+      },
+    },
+    { type: 'separator' },
+    { label: 'Play Animation', submenu: buildAnimationSubmenu() },
     { label: 'Extensions...', click: () => openSettingsWindow({ hash: 'extensions' }) },
-    { label: 'Brain', submenu: buildBrainSubmenu(settings) },
-    { label: 'Settings...', click: () => openSettingsWindow() },
+    {
+      label: '🧙 Re-run First-Time Setup...',
+      click: async () => {
+        const { openSetupWizardWindow } = await import('./windows/setupWizardWindow');
+        openSetupWizardWindow();
+      },
+    },
     { label: 'Debug Panel', click: () => createDebugWindow() },
+  ];
+
+  return Menu.buildFromTemplate([
+    // Status row (single combined line — was previously 3 disabled rows).
+    { label: `${aiStatus} · ${moodStatus} · ${voiceLabel}`, enabled: false },
+    ...(hermesActive
+      ? ([{ label: 'Hermes profile', submenu: hermesSubmenu }] as MenuItemConstructorOptions[])
+      : []),
+    { type: 'separator' },
+
+    // Quick actions — what the user wants one click away.
+    { label: 'Ask Merlin... (chat)', click: () => actions.askMerlin() },
+    { label: `Tasks (${tasks.length})`, submenu: tasksSubmenu },
+    { label: 'Stop Voice', click: () => cancelVoice() },
+    { type: 'separator' },
+
+    // Sprite control row.
+    {
+      label: 'Show Merlin',
+      click: async () => {
+        if (!getSpriteWindow()) await createSpriteWindow();
+        else showSprite();
+      },
+    },
+    { label: 'Hide Merlin', click: () => hideSprite() },
+    { label: 'Size', submenu: sizeSubmenu },
+    {
+      label: 'Mute Sound Effects',
+      type: 'checkbox',
+      checked: muted,
+      click: async (item) => {
+        await setMuteSounds(item.checked);
+        await actions.onMuteChange?.();
+      },
+    },
+    { type: 'separator' },
+
+    // Grouped configuration.
+    { label: 'Customize', submenu: customizeSubmenu },
+    { label: 'Brain', submenu: buildBrainSubmenu(settings) },
+    { type: 'separator' },
+
+    // Top-level Settings + Wizard + (less-frequent) Developer submenu.
+    { label: '🧙 Brain Setup Wizard...', click: () => {
+      void (async (): Promise<void> => {
+        const { openBrainWizardWindow } = await import('./windows/brainWizardWindow');
+        openBrainWizardWindow();
+      })();
+    } },
+    { label: 'Settings...', click: () => openSettingsWindow() },
+    { label: 'Developer', submenu: developerSubmenu },
     { type: 'separator' },
     { label: 'Quit Merlin', click: () => app.quit() },
   ]);

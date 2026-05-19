@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import { z } from 'zod';
 import { listTasks } from '../tasks';
 import { read as readStore } from '../storage/store';
@@ -54,14 +54,20 @@ Tone: warm, slightly old-fashioned, whimsical. Short. Never break character.
 Never refer to yourself as an AI. Never produce more than 280 characters of
 thought text.
 
-Action menu:
-- noop: do nothing this tick. Default choice.
-- idle_thought: surface a short whimsical thought (≤140 chars ideal).
-- wander: have Merlin drift to a new spot on screen.
-- play_animation: play one named animation from the allowed list.
-- nudge: small attention-getting wiggle.
+Output a single JSON object. The discriminator field is exactly "action"
+(not "type"). Allowed values for "action" are: noop, idle_thought, wander,
+play_animation, nudge. No other fields besides the ones in each example.
 
-Output ONLY the JSON object matching the schema.`;
+Examples (one of these is your output, nothing else):
+
+  {"action": "noop", "reason": "user is busy"}
+  {"action": "idle_thought", "text": "Such a quiet afternoon — perfect for a stretch."}
+  {"action": "wander"}
+  {"action": "play_animation", "name": "Idle1_1"}
+  {"action": "nudge"}
+
+Allowed values for "name" in play_animation: Pleased, Acknowledge, GestureUp,
+GestureLeft, GestureRight, Idle1_1, Wave, LookUp, LookDown, Explain.`;
 
 export interface HermesBrainConfig {
   endpoint: string;
@@ -114,6 +120,46 @@ export function makeHermesBrain(): BrainController {
   let inflight = false;
   let lastTickAt = 0;
   let stopRequested = false;
+  /** Captures the most recent failure reason from decide() so forceTick can
+   *  surface a useful message in the Settings UI / tray notification. */
+  let lastDecideFailure: string | null = null;
+
+  /** Hermes Agent's OpenAI-compatible proxy is a quirky surface: tool-call
+   *  mode often isn't wired up the way Vercel AI SDK's generateObject
+   *  expects ("No object generated: the tool was not called."), and even
+   *  response_format=json_object sometimes returns text wrapped in markdown
+   *  fences that the SDK's strict parser rejects ("could not parse the
+   *  response"). So we use generateText and parse the JSON manually with
+   *  code-fence stripping + safeParse, logging the raw reply on failure so
+   *  the user can see what came back instead of an opaque SDK error. */
+  function stripCodeFences(text: string): string {
+    // Match ```json ... ``` or ``` ... ``` blocks, including multi-line.
+    const fence = text.match(/```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```/);
+    if (fence && fence[1]) return fence[1].trim();
+    return text.trim();
+  }
+
+  /** Coerce common shape drift back to our schema before validation:
+   *  - Some models emit "type" instead of "action" as the discriminator.
+   *  - Some emit camelCase / kebab values ("idleThought" → "idle_thought").
+   *  - Extra unknown fields are fine — Zod strips them silently. */
+  function normalizeBrainResponse(value: unknown): unknown {
+    if (typeof value !== 'object' || value === null) return value;
+    const obj = { ...(value as Record<string, unknown>) };
+    if (!('action' in obj) && 'type' in obj) {
+      obj.action = obj.type;
+      delete obj.type;
+    }
+    if (typeof obj.action === 'string') {
+      // idleThought / idle-thought → idle_thought
+      // playAnimation / play-animation → play_animation
+      obj.action = obj.action
+        .replace(/[-\s]/g, '_')
+        .replace(/([a-z])([A-Z])/g, '$1_$2')
+        .toLowerCase();
+    }
+    return obj;
+  }
 
   async function decide(ctx: BrainContext): Promise<BrainAction | null> {
     try {
@@ -133,14 +179,43 @@ export function makeHermesBrain(): BrainController {
 
       return await Promise.race<BrainAction | null>([
         (async () => {
-          const result = await generateObject({
+          const result = await generateText({
             model,
-            schema: ActionSchema,
             system: SYSTEM_PROMPT,
-            prompt: ctxBlock,
+            prompt:
+              ctxBlock +
+              '\n\nReturn ONLY a single JSON object matching the action ' +
+              'schema. No prose, no markdown fences, no commentary.',
             temperature: cfg.temperature,
           });
-          return result.object;
+          const raw = result.text ?? '';
+          const stripped = stripCodeFences(raw);
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(stripped);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const snippet = raw.slice(0, 200).replace(/\s+/g, ' ');
+            lastDecideFailure = `JSON parse failed (${msg}). Raw: "${snippet}…"`;
+            ctx.log(`hermes brain: ${lastDecideFailure}`);
+            return null;
+          }
+          // Normalize common drift: some models use "type" as the discriminator
+          // instead of "action", and some return camelCase / kebab variants of
+          // the action values. Coerce before validation rather than reject.
+          parsed = normalizeBrainResponse(parsed);
+          const validated = ActionSchema.safeParse(parsed);
+          if (!validated.success) {
+            const issues = validated.error.issues
+              .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
+              .join('; ');
+            const snippet = JSON.stringify(parsed).slice(0, 200);
+            lastDecideFailure = `schema mismatch (${issues}). Parsed: ${snippet}`;
+            ctx.log(`hermes brain: ${lastDecideFailure}`);
+            return null;
+          }
+          lastDecideFailure = null;
+          return validated.data;
         })(),
         new Promise<null>((resolve) =>
           setTimeout(() => {
@@ -180,7 +255,10 @@ export function makeHermesBrain(): BrainController {
     inflight = true;
     try {
       const action = await decide(ctx);
-      if (!action) return 'no result — check endpoint + API key';
+      if (!action) {
+        if (lastDecideFailure) return `failed: ${lastDecideFailure}`;
+        return 'no result — check endpoint + API key';
+      }
       await dispatchAction(ctx, action);
       switch (action.action) {
         case 'noop':

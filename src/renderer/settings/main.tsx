@@ -106,7 +106,7 @@ function ProviderCard(props: {
         {/* Hermes profiles are URL-bound (one port = one profile = one model), */}
         {/* so the freeform Model field is redundant — the Profile dropdown below */}
         {/* sets it. Every other provider uses the generic Model input. */}
-        {info.id !== 'hermes' && (
+        {info.id !== 'hermes' && info.id !== 'ollama' && (
           <div className="row">
             <label htmlFor={`model-${info.id}`}>Model</label>
             <input
@@ -123,6 +123,24 @@ function ProviderCard(props: {
                 <option key={m} value={m} />
               ))}
             </datalist>
+          </div>
+        )}
+        {info.id === 'ollama' && selected && (
+          <BrainModelPicker
+            active={true}
+            currentModel={currentModel}
+            onSelect={onModelChange}
+          />
+        )}
+        {info.id === 'ollama' && !selected && (
+          <div className="row">
+            <label htmlFor={`model-${info.id}`}>Model</label>
+            <input
+              id={`model-${info.id}`}
+              type="text"
+              value={info.defaultModel}
+              disabled
+            />
           </div>
         )}
 
@@ -470,6 +488,53 @@ function BrainTestButton(): React.ReactElement {
   );
 }
 
+type SettingsTabId =
+  | 'chat'
+  | 'brain'
+  | 'character'
+  | 'voice'
+  | 'appearance'
+  | 'behaviors'
+  | 'hotkeys'
+  | 'tools'
+  | 'about';
+
+interface SettingsTab {
+  id: SettingsTabId;
+  label: string;
+  icon: string;
+}
+
+const SETTINGS_TABS: ReadonlyArray<SettingsTab> = [
+  { id: 'chat',       label: 'Chat',        icon: '💬' },
+  { id: 'brain',      label: 'Brain',       icon: '🧠' },
+  { id: 'character',  label: 'Character',   icon: '🧙' },
+  { id: 'voice',      label: 'Voice',       icon: '🔊' },
+  { id: 'appearance', label: 'Appearance',  icon: '🎨' },
+  { id: 'behaviors',  label: 'Behaviors',   icon: '⚙️' },
+  { id: 'hotkeys',    label: 'Hotkeys',     icon: '⌨️' },
+  { id: 'tools',      label: 'Tools',       icon: '🛠️' },
+  { id: 'about',      label: 'About',       icon: 'ℹ️' },
+];
+
+/** Map a URL hash (set by the tray's deep-link menu items) to the matching
+ *  tab. Falls back to 'chat' for unknown hashes. */
+function tabFromHash(hash: string): SettingsTabId {
+  const h = hash.replace(/^#/, '').toLowerCase();
+  switch (h) {
+    case 'extensions': return 'behaviors';
+    case 'brain':      return 'brain';
+    case 'character':  return 'character';
+    case 'voice':      return 'voice';
+    case 'appearance': return 'appearance';
+    case 'hotkeys':    return 'hotkeys';
+    case 'tools':      return 'tools';
+    case 'about':      return 'about';
+    case 'chat':       return 'chat';
+    default:           return 'chat';
+  }
+}
+
 function App(): React.ReactElement {
   const [providers, setProviders] = useState<ProviderInfoForUi[]>([]);
   const [settings, setSettings] = useState<StoreSnapshot | null>(null);
@@ -482,6 +547,17 @@ function App(): React.ReactElement {
   const [elevenLabsSaved, setElevenLabsSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savedAt, setSavedAt] = useState<number>(0);
+  // Active sidebar tab. Initialised from URL hash so the tray's deep-links
+  // (e.g. "Extensions..." sets hash=extensions → tab=behaviors) work on first
+  // open. Hash changes after open are also picked up.
+  const [tab, setTab] = useState<SettingsTabId>(() =>
+    typeof location !== 'undefined' ? tabFromHash(location.hash) : 'chat',
+  );
+  useEffect(() => {
+    const onHash = (): void => setTab(tabFromHash(location.hash));
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -549,11 +625,27 @@ function App(): React.ReactElement {
       <header>
         <h1>Merlin — Settings</h1>
         <div className="subtitle">
-          Choose an AI provider, paste your key, and start chatting. Keys are encrypted on this
-          machine; nothing is sent anywhere except the provider you select.
+          Pick a category on the left. Changes save automatically; keys are
+          encrypted on this machine and never leave it.
         </div>
       </header>
-      <main>
+      <div className="settings-body">
+        <nav className="sidebar" aria-label="Settings categories">
+          {SETTINGS_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`sidebar-item ${tab === t.id ? 'active' : ''}`}
+              onClick={() => setTab(t.id)}
+              aria-current={tab === t.id ? 'page' : undefined}
+            >
+              <span className="sidebar-icon" aria-hidden="true">{t.icon}</span>
+              <span className="sidebar-label">{t.label}</span>
+            </button>
+          ))}
+        </nav>
+        <main>
+        {tab === 'chat' && (
         <section>
           <h2>Chat (Conversational LLM)</h2>
           <div className="status">
@@ -601,7 +693,9 @@ function App(): React.ReactElement {
             />
           ))}
         </section>
+        )}
 
+        {tab === 'character' && (
         <section>
           <h2>Character</h2>
           <div className="row">
@@ -620,6 +714,22 @@ function App(): React.ReactElement {
           </div>
           <div className="status">
             {characters.find((c) => c.id === settings.character)?.description}
+          </div>
+          <div className="row">
+            <label htmlFor="username">Your name</label>
+            <input
+              id="username"
+              type="text"
+              value={settings.userName ?? ''}
+              placeholder="(Merlin will use your Windows username)"
+              onChange={(e) =>
+                void update({ userName: e.target.value.trim() || null })
+              }
+            />
+          </div>
+          <div className="status">
+            What Merlin calls you in conversation. Leave blank to use your
+            Windows account name.
           </div>
           <div className="row">
             <label> </label>
@@ -644,7 +754,9 @@ function App(): React.ReactElement {
             Drop a JSON file like <code>{`{ "id": "sage-cat", "displayName": "Sage", "personaHint": "...", "baseCharacter": "Links" }`}</code> in that folder and click Reload.
           </div>
         </section>
+        )}
 
+        {tab === 'voice' && (
         <section>
           <h2>Voice</h2>
           <div className="row">
@@ -835,10 +947,37 @@ function App(): React.ReactElement {
               </div>
             </>
           )}
+          <div className="row-grid" style={{ marginTop: 12 }}>
+            <div className="row">
+              <label htmlFor="welcome">
+                <input
+                  id="welcome"
+                  type="checkbox"
+                  checked={settings.showWelcomeOnStart}
+                  onChange={(e) => void update({ showWelcomeOnStart: e.target.checked })}
+                />{' '}
+                Show welcome greeting on startup
+              </label>
+            </div>
+            <div className="row">
+              <label htmlFor="speak-welcome">
+                <input
+                  id="speak-welcome"
+                  type="checkbox"
+                  checked={settings.speakWelcome}
+                  disabled={!settings.showWelcomeOnStart || settings.voiceEngine === 'off'}
+                  onChange={(e) => void update({ speakWelcome: e.target.checked })}
+                />{' '}
+                Speak the welcome aloud
+              </label>
+            </div>
+          </div>
         </section>
+        )}
 
+        {tab === 'appearance' && (
         <section>
-          <h2>Behavior</h2>
+          <h2>Appearance</h2>
           <div className="row">
             <label htmlFor="display-mode">Chat Style</label>
             <select
@@ -894,69 +1033,12 @@ function App(): React.ReactElement {
             more like a "rendered" character on modern high-DPI screens. Takes
             effect immediately.
           </div>
-          <div className="row">
-            <label htmlFor="username">Your name</label>
-            <input
-              id="username"
-              type="text"
-              value={settings.userName ?? ''}
-              placeholder="(Merlin will use your Windows username)"
-              onChange={(e) =>
-                void update({ userName: e.target.value.trim() || null })
-              }
-            />
-          </div>
-          <div className="row-grid">
-            <div className="row">
-              <label htmlFor="welcome">
-                <input
-                  id="welcome"
-                  type="checkbox"
-                  checked={settings.showWelcomeOnStart}
-                  onChange={(e) => void update({ showWelcomeOnStart: e.target.checked })}
-                />{' '}
-                Show welcome greeting on startup
-              </label>
-            </div>
-            <div className="row">
-              <label htmlFor="speak-welcome">
-                <input
-                  id="speak-welcome"
-                  type="checkbox"
-                  checked={settings.speakWelcome}
-                  disabled={!settings.showWelcomeOnStart || settings.voiceEngine === 'off'}
-                  onChange={(e) => void update({ speakWelcome: e.target.checked })}
-                />{' '}
-                Speak the welcome aloud
-              </label>
-            </div>
-            <div className="row">
-              <label htmlFor="idle-thoughts">
-                <input
-                  id="idle-thoughts"
-                  type="checkbox"
-                  checked={settings.idleThoughtsEnabled}
-                  onChange={(e) => void update({ idleThoughtsEnabled: e.target.checked })}
-                />{' '}
-                Idle thoughts (occasional unprompted remarks)
-              </label>
-            </div>
-            <div className="row">
-              <label htmlFor="autostart">
-                <input
-                  id="autostart"
-                  type="checkbox"
-                  checked={settings.autoStart}
-                  onChange={(e) => void update({ autoStart: e.target.checked })}
-                />{' '}
-                Start with Windows
-              </label>
-            </div>
-          </div>
         </section>
+        )}
 
+        {tab === 'behaviors' && (
         <section id="extensions">
-          <h2>Extensions</h2>
+          <h2>Behaviors (Extensions)</h2>
           <div className="status">
             Toggle individual Merlin behaviors. Defaults match the experience you
             get with everything on. Changes apply immediately — no restart needed.
@@ -1033,7 +1115,9 @@ function App(): React.ReactElement {
             </div>
           ))}
         </section>
+        )}
 
+        {tab === 'brain' && (
         <section id="brain">
           <h2>Brain (Autonomous LLM)</h2>
           <div className="status">
@@ -1087,7 +1171,9 @@ function App(): React.ReactElement {
           />
           <BrainTestButton />
         </section>
+        )}
 
+        {tab === 'hotkeys' && (
         <section>
           <h2>Hotkeys</h2>
           <div className="row">
@@ -1129,7 +1215,9 @@ function App(): React.ReactElement {
             <code>Alt+F12</code>, etc. Changes register immediately.
           </div>
         </section>
+        )}
 
+        {tab === 'tools' && (
         <section>
           <h2>Tools</h2>
           <div className="row">
@@ -1172,7 +1260,72 @@ function App(): React.ReactElement {
             </button>
           </div>
         </section>
-      </main>
+        )}
+
+        {tab === 'about' && (
+        <section>
+          <h2>About &amp; System</h2>
+          <div className="row-grid">
+            <div className="row">
+              <label htmlFor="autostart">
+                <input
+                  id="autostart"
+                  type="checkbox"
+                  checked={settings.autoStart}
+                  onChange={(e) => void update({ autoStart: e.target.checked })}
+                />{' '}
+                Start with Windows
+              </label>
+            </div>
+            <div className="row">
+              <label htmlFor="idle-thoughts-legacy">
+                <input
+                  id="idle-thoughts-legacy"
+                  type="checkbox"
+                  checked={settings.idleThoughtsEnabled}
+                  onChange={(e) => void update({ idleThoughtsEnabled: e.target.checked })}
+                />{' '}
+                Idle thoughts (legacy toggle)
+              </label>
+            </div>
+          </div>
+          <div className="status">
+            The legacy <em>Idle thoughts</em> toggle is preserved for back-compat;
+            new code reads it from the Extensions catalog
+            (<code>behavior.brain.idle_thoughts</code>) which gets seeded from
+            this value on first launch.
+          </div>
+          <h3 className="extensions-group-title" style={{ marginTop: 20 }}>About</h3>
+          <div className="status">
+            <strong>Merlin the Wizard</strong> — a Windows 11 desktop companion
+            that recreates the Microsoft Agent Merlin sprite as a modern
+            LLM-backed assistant. Multi-provider chat, voice, screen capture,
+            custom characters, and an autonomous brain.
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button
+              className="secondary"
+              onClick={() => void api.openExternal('https://github.com/therealgorgan/merlin-the-wizard')}
+            >
+              GitHub repo →
+            </button>
+            <button
+              className="secondary"
+              onClick={() => void api.openExternal('https://github.com/therealgorgan/merlin-the-wizard/issues')}
+            >
+              Report an issue →
+            </button>
+            <button
+              className="secondary"
+              onClick={() => void api.openExternal('https://github.com/therealgorgan/merlin-the-wizard/blob/main/CHANGELOG.md')}
+            >
+              Changelog →
+            </button>
+          </div>
+        </section>
+        )}
+        </main>
+      </div>
       <footer>
         <span className={`saved-badge ${showSavedBadge ? 'visible' : ''}`}>
           {showSavedBadge ? 'Saved ✓' : 'Changes save automatically.'}

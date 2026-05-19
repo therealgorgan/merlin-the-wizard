@@ -123,6 +123,10 @@ function App(): React.ReactElement {
   const [hermesProbing, setHermesProbing] = useState(false);
   const [hermesKeySaved, setHermesKeySaved] = useState(false);
 
+  // Opt-in: also use the picked Ollama model as the Conversational/Chat LLM.
+  // Default false — chat config shouldn't change unless the user asks for it.
+  const [mirrorToChat, setMirrorToChat] = useState(false);
+
   // Pre-fill from current store snapshot once on mount.
   useEffect(() => {
     void (async () => {
@@ -709,6 +713,7 @@ function App(): React.ReactElement {
         await api.apply({
           controllerId: 'local-llm',
           config: { endpoint: ollamaEndpoint, model, temperature: 0.8 },
+          mirrorToChat,
         });
       } else {
         await api.apply({
@@ -725,6 +730,15 @@ function App(): React.ReactElement {
   }
 
   function renderDone(): React.ReactElement {
+    const localModel = customModel.trim() || pickedModel;
+    // Cross-check: is the picked model big enough for chat to be useful?
+    // Anything below 3B is fine for the brain's tiny JSON but feels weak in
+    // multi-turn conversation. We pull this signal from the catalog where we
+    // can; for free-text tags we err toward "warn" if it contains :1b / :0.5b.
+    const meta = MODEL_OPTIONS.find((m) => m.tag === localModel);
+    const looksTinyForChat = meta
+      ? meta.minRamGb <= 4
+      : /:0?\.\d|:1b/i.test(localModel);
     return (
       <>
         <h2>All set</h2>
@@ -737,9 +751,9 @@ function App(): React.ReactElement {
           {choice === 'local-llm' && (
             <>
               Local-LLM brain will tick every ~5 minutes while you're idle and
-              ask <code>{customModel.trim() || pickedModel}</code> what Merlin
-              should do. If anything goes wrong (Ollama stopped, model deleted),
-              the brain falls back silently to no-op and Merlin keeps working.
+              ask <code>{localModel}</code> what Merlin should do. If anything
+              goes wrong (Ollama stopped, model deleted), the brain falls back
+              silently to no-op and Merlin keeps working.
             </>
           )}
           {choice === 'hermes' && (
@@ -750,8 +764,53 @@ function App(): React.ReactElement {
             </>
           )}
         </p>
+        {choice === 'local-llm' && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 12,
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+            }}
+          >
+            <label
+              htmlFor="mirror-to-chat"
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}
+            >
+              <input
+                id="mirror-to-chat"
+                type="checkbox"
+                checked={mirrorToChat}
+                onChange={(e) => setMirrorToChat(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <strong>Also use this model when I chat with Merlin</strong>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  Sets the Chat (Conversational) LLM provider to Ollama with{' '}
+                  <code>{localModel}</code> at <code>{ollamaEndpoint}</code>.
+                  One model, both surfaces.
+                </div>
+                {looksTinyForChat ? (
+                  <div
+                    className="alert warn"
+                    style={{ marginTop: 8, fontSize: 12, padding: '8px 10px' }}
+                  >
+                    ⚠ <strong>Heads-up:</strong> <code>{localModel}</code> is
+                    sized for the brain&apos;s tiny JSON-schema decisions. It
+                    works for the brain but feels limited in actual
+                    conversation. For chat-as-well, consider a 3B+ model
+                    (Llama 3.2 3B, Qwen 2.5 Coder 3B, Mistral 7B, etc.).
+                  </div>
+                ) : null}
+              </span>
+            </label>
+          </div>
+        )}
         <p className="muted">
-          You can change any of this later from Settings → Brain.
+          You can change any of this later from Settings → Brain (or Settings →
+          Chat for the chat provider).
         </p>
       </>
     );

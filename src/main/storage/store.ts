@@ -53,6 +53,11 @@ export interface StoreData {
   brainController: string;
   /** Per-controller configuration map. Outer key = controller id, inner = arbitrary settings. */
   brainControllerConfig: Record<string, Record<string, unknown>>;
+  /** True once the user has finished (or dismissed) the first-time Setup
+   *  Wizard. Used by main/index.ts to decide whether to auto-pop the wizard
+   *  on app start. Set on completion OR when the user explicitly closes the
+   *  wizard without finishing — we don't nag. */
+  firstRunComplete: boolean;
 }
 
 const DEFAULTS: StoreData = {
@@ -80,6 +85,7 @@ const DEFAULTS: StoreData = {
   extensions: {},
   brainController: 'default',
   brainControllerConfig: {},
+  firstRunComplete: false,
 };
 
 let cache: StoreData | null = null;

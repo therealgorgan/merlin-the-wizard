@@ -29,6 +29,7 @@ export default defineConfig({
           history: resolve(__dirname, 'src/preload/history.ts'),
           chatPanel: resolve(__dirname, 'src/preload/chatPanel.ts'),
           brainWizard: resolve(__dirname, 'src/preload/brainWizard.ts'),
+          setupWizard: resolve(__dirname, 'src/preload/setupWizard.ts'),
         },
       },
     },
@@ -48,6 +49,7 @@ export default defineConfig({
           history: resolve(__dirname, 'src/renderer/history/index.html'),
           chatPanel: resolve(__dirname, 'src/renderer/chat-panel/index.html'),
           brainWizard: resolve(__dirname, 'src/renderer/brain-wizard/index.html'),
+          setupWizard: resolve(__dirname, 'src/renderer/setup-wizard/index.html'),
         },
         // React is imported from settings/main.tsx; ensure it's included.
       },

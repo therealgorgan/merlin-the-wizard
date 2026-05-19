@@ -13,6 +13,146 @@ Nothing yet.
 
 ---
 
+## [0.5.1] — 2026-05-19
+
+Polish + onboarding release. Major UI overhaul of Settings (left-sidebar
+tabs) and tray menu (grouping submenus); brand-new **First-Time Setup
+Wizard** that walks new users through name, character, chat LLM, voice,
+and chat style on Day 1; the Brain Wizard now offers a one-click "use the
+same model for chat too" checkbox; Hermes brain controller robustified
+against the quirky structured-output behavior of OpenAI-compatible proxies.
+
+### Added
+
+- **🧙 First-Time Setup Wizard** (new window). 7 steps:
+  1. Welcome
+  2. Your name (what Merlin calls you)
+  3. Character (avatar picker, lists installed characters)
+  4. Chat LLM (provider picker + key entry — Groq recommended w/ free-key link)
+  5. Voice engine (Edge Neural recommended; SAPI/Groq/Off also)
+  6. Chat style (Classic bubble vs Modern panel)
+  7. Done (summary + optional jump straight into the Brain Setup Wizard)
+
+  Auto-launches 3.5 s after Merlin's Greet on first app start so the
+  user gets the "oh, there's Merlin!" moment first. Suppressed via a
+  new `firstRunComplete: boolean` store flag set on Finish / Skip /
+  even on plain window-close (no nagging). Re-openable any time from
+  the tray's Developer submenu.
+
+- **Wizard "Also use this model for chat"** opt-in checkbox at the
+  Brain Setup Wizard's Apply step. When checked (and controller is
+  `local-llm`), the wizard also sets `llmProvider: 'ollama'`,
+  `llmModel`, and `ollamaEndpoint` so a single wizard run configures
+  both the autonomous brain AND the chat surface. Warning shown if
+  the picked model is below 3 B ("too small for chat").
+
+- **Shared brain-models catalog** at `src/shared/brain-models-catalog.ts`
+  — single source of truth for 13 curated models (Qwen 2.5 0.5B/1.5B/7B,
+  Qwen 2.5 Coder 3B/7B, Llama 3.2 1B/3B, Llama 3.1 8B, Llama 3.3 70B,
+  Phi-3 Mini, Mistral 7B, Gemma 2 2B/9B) with size, min-RAM, and
+  cold/warm response-time estimates. Imported by the Brain Wizard,
+  Settings → Brain, Settings → Chat → Ollama, and the tray Brain
+  submenu so labels and time estimates can't drift apart.
+
+- **Settings → Chat → Ollama** now uses the same `BrainModelPicker`
+  the Brain section uses — installed-badges, response-time estimates,
+  custom-tag fallback.
+
+- **About tab** in Settings: autostart, idle-thoughts legacy toggle,
+  app version description, and quick links to GitHub repo, Issues
+  tracker, and CHANGELOG.
+
+- **New IPC channels**: `setupWizard:open`, `setupWizard:close`,
+  `setupWizard:complete`.
+
+- **New files**: `src/main/windows/setupWizardWindow.ts`,
+  `src/preload/setupWizard.ts`, `src/renderer/setup-wizard/`
+  (index.html / main.tsx / style.css).
+
+### Changed
+
+- **Settings UI: complete restructure into left-sidebar tabs.** 9 tabs:
+  💬 Chat / 🧠 Brain / 🧙 Character / 🔊 Voice / 🎨 Appearance /
+  ⚙️ Behaviors / ⌨️ Hotkeys / 🛠️ Tools / ℹ️ About. Each tab has its
+  own scroll area. URL-hash deep-linking still works (tray "Extensions..."
+  → `#extensions` → Behaviors tab). Misplaced fields were redistributed:
+  - "Your name" → Character tab
+  - Welcome / speak-welcome → Voice tab
+  - Chat Style / Mute SFX / Sprite appearance → Appearance tab
+  - Autostart / legacy idle-thoughts → About tab
+
+- **Tray menu: complete reorganization.** Top-level went from ~28 items
+  to ~12. Three disabled "AI / Mood / Voice" status rows collapsed into
+  one combined "Status" row. Less-frequent items pushed into two new
+  submenus:
+  - **Customize**: Character, Chat Style, Sprite appearance, Voice engine,
+    Start with Windows
+  - **Developer**: Conversation History, Forget Conversation, Play
+    Animation, Extensions deep-link, Re-run First-Time Setup, Debug Panel
+
+- **Hermes brain controller**: switched from `generateObject` (which
+  failed against Hermes's OpenAI-compatible proxy with "No object
+  generated: the tool was not called" → then "could not parse the
+  response") to `generateText` + manual JSON parse with:
+  - Markdown code-fence stripping (```json ... ``` blocks)
+  - Response normalization: `"type"` → `"action"` discriminator,
+    `idleThought`/`idle-thought` → `idle_thought`
+  - Zod `safeParse` with detailed failure messages
+  - Concrete JSON examples in the system prompt
+  - `forceTick` now returns the actual failure reason ("schema mismatch
+    (action: ...)") instead of an opaque SDK error.
+
+- **Brain Setup Wizard model cards** now show `⚡ Warm response: <s>`
+  and `Cold load: <s>` lines per model.
+
+- **Settings "Display mode" label renamed to "Chat Style"** to match
+  the tray menu.
+
+- **Settings window default size**: 720 × 760 (was 560 × 720); now
+  resizable with `minWidth: 520` / `minHeight: 480`.
+
+- **Extensions section layout**: now a CSS Grid (`repeat(auto-fill,
+  minmax(220px, 1fr))`) packing 28 boolean flags 2-per-row at typical
+  width. Select-type flags (drag-start / drag-end) span both columns.
+
+- **"Chat LLM" vs "Brain LLM" verbiage**: Settings now labels the chat
+  provider as "Chat (Conversational LLM)" and the brain as "Brain
+  (Autonomous LLM)" with cross-referenced subtitles emphasizing they
+  are independent.
+
+### Fixed
+
+- **Critical brain crash (carry-over from 0.5.0 alpha)**: lazy
+  `require()` in `src/main/brainControllers/context.ts` didn't survive
+  electron-vite bundling — relative paths only exist in source, not in
+  the bundled `out/main/index.js`. Every brain tick was crashing with
+  `Cannot find module '../animationController'`. Converted to static
+  imports (there is no actual circular dep).
+
+- **Wizard test timeout**: bumped from 45 s → 120 s. Cold-loading an
+  8 B model on CPU-only systems can take 60-90 s for the first
+  response. The test now also passes `keep_alive: '15m'` so the
+  model stays resident for the brain's actual first tick.
+
+- **Brain `keep_alive`**: local-llm `generateObject` calls now pass
+  `providerOptions: { ollama: { keepAlive: '15m' } }` so models don't
+  get unloaded between ticks at our 5-min cadence.
+
+- **Checkbox sizing regression**: the earlier 200 px `min-width` I
+  added to `.row input` for text inputs was also applying to
+  checkboxes, reserving a 200 px-wide slot for each one and pushing
+  labels far to the right. Scoped to
+  `:not([type='checkbox']):not([type='radio'])`.
+
+- **Settings horizontal scrollbar** killed via defensive
+  `overflow-x: hidden` + `min-width: 0` rules.
+
+- **Flex wrap fix**: `.row` containers now have `flex-wrap: wrap` so
+  descriptions with `flex: 1 0 100%` actually wrap onto a new line
+  instead of fighting the label for space.
+
+---
+
 ## [0.5.0] — 2026-05-19
 
 The brain itself gets a brain. Pluggable autonomous loops land — pick the
