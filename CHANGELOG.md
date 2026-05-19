@@ -13,6 +13,153 @@ Nothing yet.
 
 ---
 
+## [0.5.0] — 2026-05-19
+
+The brain itself gets a brain. Pluggable autonomous loops land — pick the
+**default timer**, a **local Ollama model**, or a **Hermes Agent profile** to
+drive what Merlin does between chats. A new dedicated **Brain Setup Wizard**
+walks first-time users through installing Ollama, picking a model sized to
+their hardware, pulling it, and verifying it works end-to-end.
+
+### Added
+
+- **🧙 Brain Setup Wizard** (new window). Multi-step React flow:
+    1. Pick controller (default / local-llm / hermes).
+    2. (local-llm) **Auto-scan for Ollama** — probes the user's saved
+       endpoint, `OLLAMA_HOST` env var, common defaults
+       (`localhost:11434`, `127.0.0.1:11434`, `0.0.0.0:11434`,
+       alt-port `11435`), and inspects running `ollama.exe` via
+       PowerShell (`Get-NetTCPConnection -OwningProcess`) to find the
+       actual listening port. First responder wins. Falls back to
+       manual endpoint entry with the full probe-attempt log surfaced
+       in a collapsed details block.
+    3. Detect hardware (RAM, CPU, GPU via PowerShell `Win32_VideoController`)
+       and recommend a model tier. Curated list: Llama 3.2 1B/3B,
+       Phi-3 Mini, Llama 3.1 8B, Mistral 7B, Qwen 2.5 7B — with
+       size + min-RAM badges and "already installed" highlighting.
+    4. Stream the Ollama pull with live progress (NDJSON parsed; bytes
+       completed / total + pct). Cancellable mid-pull.
+    5. Test the model with a one-shot generate; show the reply.
+    6. Apply: persists `brainController` + `brainControllerConfig`
+       and hot-swaps the active controller via `swapBrain()`.
+  Hermes path: endpoint + key entry, `/v1/models` probe, profile
+  picker, apply. Reachable from tray menu + Settings → Brain.
+- **`local-llm` brain controller** (`src/main/brainControllers/localLlmBrain.ts`).
+  Calls Ollama via `ollama-ai-provider` + Vercel AI SDK `generateObject`
+  with a Zod discriminated-union action schema (`noop` / `idle_thought`
+  / `wander` / `play_animation` / `nudge`). 5-min coarse cadence;
+  90s idle floor; 45s hard timeout; in-flight mutex; silent degradation
+  if the model is unreachable. Per-controller config: endpoint, model,
+  temperature. Stored at `brainControllerConfig['local-llm']`.
+- **`hermes` brain controller** (`src/main/brainControllers/hermesBrain.ts`).
+  Same prompt + schema as local-llm but routed through an OpenAI-compatible
+  Hermes endpoint with bearer auth from `hermes_api_key` secret. Config:
+  endpoint, model (profile name), temperature.
+- **Settings → Brain section.** Controller picker + "Open Brain Setup
+  Wizard…" button. Switching takes effect immediately via `swapBrain()`.
+- **Tray menu entry: `🧙 Brain Setup Wizard…`** beside Extensions.
+- New IPC channels: `brainWizard:detectHardware`, `brainWizard:probeOllama`,
+  `brainWizard:pullOllamaModel`, `brainWizard:pullProgress` (push), `brainWizard:cancelPull`,
+  `brainWizard:testOllamaModel`, `brainWizard:probeHermes`, `brainWizard:apply`,
+  `brainWizard:open`, `brainWizard:close`.
+- New preload (`src/preload/brainWizard.ts`) + renderer
+  (`src/renderer/brain-wizard/`) + window manager
+  (`src/main/windows/brainWizardWindow.ts`).
+
+- **Shared brain-models catalog** at `src/shared/brain-models-catalog.ts` —
+  single source of truth for the 13 curated models (Qwen 2.5 0.5B/1.5B/7B,
+  Qwen 2.5 Coder 3B/7B, Llama 3.2 1B/3B, Llama 3.1 8B, Llama 3.3 70B,
+  Phi-3 Mini, Mistral 7B, Gemma 2 2B/9B). Each entry carries size, min-RAM,
+  cold-load + warm-response time estimates, and notes. Imported by the
+  wizard, Settings → Brain, and the tray Brain submenu so labels and time
+  estimates stay in sync.
+- **Brain model picker in Settings → Brain** — dropdown of all 13 curated
+  models plus any installed-but-not-in-catalog models from `/api/tags`,
+  with response-time estimates inline (`warm <1s` / `cold ~4-8s`).
+  Switching models live (no restart) since each tick re-reads its config.
+  Free-text custom-tag input for non-catalog models.
+- **Tray → Brain submenu** quick-switcher: controller picker (Default /
+  Local LLM / Hermes), 8-model fast-swap list with warm-response labels,
+  "🧠 Test brain now" entry that fires a forced tick and pops a Windows
+  notification with the chosen action, and "🧙 Setup Wizard..." shortcut.
+- **🧠 Test brain now** button + IPC (`brain:forceTick`). Calls the
+  active controller's `forceTick(ctx)` method which bypasses idle-floor +
+  intent gates and returns a one-line action summary. Hooked from both
+  Settings and tray.
+- **Local-LLM auto-detect for the wizard**: scans the user's stored
+  `ollamaEndpoint`, `OLLAMA_HOST` env var, and the running `ollama.exe`
+  process (via `Get-NetTCPConnection -OwningProcess`) to find the actual
+  listening port even when Ollama is on a non-default endpoint.
+- **Mute Sound Effects** moved to Settings → Behavior as well (was
+  tray-only). `muteSounds` added to `StoreSnapshot`.
+- **OnboardingGuide-style verbiage** in Settings: top section relabeled
+  **"Chat (Conversational LLM)"** and Brain section relabeled **"Brain
+  (Autonomous LLM)"** with cross-referenced subtitles emphasizing they
+  are independent — the chat model and the brain model do not have to
+  match, and the default brain uses no LLM at all.
+
+### Changed
+
+- `BRAIN_CONTROLLERS` registry in `src/main/brainControllers/registry.ts`
+  now exports three factories: `default`, `local-llm`, `hermes`. Each
+  declares a `configSchema` (advisory — wizard doesn't render it; manual
+  Settings edit may use it in a future revision).
+- `SettingsApi.openBrainWizard()` + `forceBrainTick()` + `listOllamaModels()`
+  added to the settings preload.
+- Settings window now opens at **720×760** (was 560×720) and is resizable
+  with `minWidth: 520` / `minHeight: 480`. The wider default lets the new
+  Extensions 2-column grid render properly.
+- Settings layout overhaul: Extensions section is now a CSS Grid
+  (`repeat(auto-fill, minmax(220px, 1fr))`), packing the 28 boolean flags
+  2-per-row at typical width. Select-type flags (drag-start / drag-end
+  animation pickers) span both columns. Long descriptions wrap inline
+  beneath each label. Killed the previous horizontal scrollbar with
+  defensive `overflow-x: hidden` + `min-width: 0` rules. Behavior section's
+  4 short toggles also pack in `.row-grid` 2-per-row.
+- Settings "Display mode" label renamed to "Chat Style" to match the tray
+  menu (carry-through from 0.4.0).
+
+### Fixed
+
+- **Critical: brain tick crash** in v0.5.0 alpha. The lazy `require()`
+  pattern I used in `src/main/brainControllers/context.ts` to "dodge
+  circular imports" doesn't survive electron-vite bundling — relative
+  paths only exist in source, not in the bundled `out/main/index.js`.
+  Every tick crashed with `Cannot find module '../animationController'`.
+  Converted to static imports (there is no actual circular dep —
+  animationController never reaches into brain controllers).
+- **Wizard test timeout**: bumped from 45 s → 120 s. Cold-loading an 8B
+  model on CPU-only systems can take 60-90 s for the first response.
+  The test also passes `keep_alive: '15m'` so the model stays resident
+  for the brain's actual first tick.
+- **Brain `keep_alive`**: local-llm `generateObject` calls now pass
+  `providerOptions: { ollama: { keepAlive: '15m' } }` so models don't
+  get unloaded between ticks at our 5-min cadence (Ollama default is
+  5 min — without this every other tick was a cold load).
+- Settings checkbox sizing: the earlier 200 px `min-width` I added to
+  `.row input` for text inputs was also applying to checkboxes, reserving
+  a 200 px-wide slot for each one and pushing labels far to the right.
+  Scoped the rule to `:not([type='checkbox']):not([type='radio'])`.
+
+### Notes
+
+- The two new LLM-backed controllers degrade silently. If Ollama is stopped,
+  the model is deleted, the Hermes endpoint moves, or any tick times out,
+  the controller logs the failure and returns to idle. Merlin keeps working
+  in degraded mode; no notifications or crashes.
+- Local-LLM brain ticks are bounded — the model can only emit one of five
+  discriminated-union actions, all of which route through the same
+  `BrainContext` methods used by the default brain. The LLM cannot send
+  arbitrary IPC, move Merlin off-screen, or invoke tools.
+- The `behavior.brain_controller.allow_override_actions` flag (shipped in
+  0.4.0) is now load-bearing: when **off** (default), the LLM's actions
+  still respect every behavior flag (e.g. wander stays disabled if the
+  user turned `behavior.brain.wander` off); when **on**, the controller
+  can override. Surfaced as "Allow brain to override behavior flags
+  (advanced)" in the Extensions UI.
+
+---
+
 ## [0.4.0] — 2026-05-19
 
 Big plumbing release. Two headline features:

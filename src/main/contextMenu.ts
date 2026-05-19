@@ -30,10 +30,113 @@ import {
   setActiveHermesProfile,
   discoverAllHermesProfiles,
 } from './hermesDiscovery';
-import { read as readStore } from './storage/store';
+import { read as readStore, write as writeStore } from './storage/store';
+import { forceTickActiveBrain, swapBrain } from './brainSupervisor';
+import { BRAIN_CONTROLLERS } from './brainControllers/registry';
+import { BRAIN_MODEL_CATALOG, findModel } from '@shared/brain-models-catalog';
 
 function zoomLabel(z: number): string {
   return `${z.toFixed(z % 1 === 0 ? 0 : 1)}x`;
+}
+
+/** Curated quick-switch list of brain models for the tray. Subset of the
+ *  shared catalog — the small + medium models that make sense for fast
+ *  swapping. Labels and warm-response times are derived from the catalog
+ *  so the tray stays in sync with the wizard and Settings automatically. */
+const TRAY_BRAIN_MODEL_TAGS: ReadonlyArray<string> = [
+  'qwen2.5:0.5b',
+  'qwen2.5:1.5b',
+  'llama3.2:1b',
+  'gemma2:2b',
+  'qwen2.5-coder:3b',
+  'llama3.2:3b',
+  'phi3:mini',
+  'llama3.1:8b',
+];
+
+const TRAY_BRAIN_MODELS: ReadonlyArray<{ tag: string; label: string }> = TRAY_BRAIN_MODEL_TAGS
+  .map((tag) => {
+    const m = findModel(tag);
+    if (!m) return { tag, label: tag };
+    return { tag, label: `${m.label} (warm ${m.warmSec})` };
+  });
+
+// Reference BRAIN_MODEL_CATALOG so future code-coverage tools / linting see
+// the dependency. Also lets a future tray-submenu surface every model.
+void BRAIN_MODEL_CATALOG;
+
+function buildBrainSubmenu(
+  settings: { brainController?: string; brainControllerConfig?: Record<string, Record<string, unknown>> },
+): MenuItemConstructorOptions[] {
+  const activeId = settings.brainController ?? 'default';
+  const localCfg = (settings.brainControllerConfig?.['local-llm'] ?? {}) as { model?: string };
+  const currentModel = localCfg.model ?? 'llama3.2:3b';
+  const localActive = activeId === 'local-llm';
+
+  const controllerEntries: MenuItemConstructorOptions[] = Object.values(BRAIN_CONTROLLERS).map(
+    (factory) => ({
+      label: factory.displayName,
+      type: 'radio' as const,
+      checked: activeId === factory.id,
+      click: async (): Promise<void> => {
+        await writeStore({ brainController: factory.id });
+        await swapBrain();
+      },
+    }),
+  );
+
+  const modelEntries: MenuItemConstructorOptions[] = TRAY_BRAIN_MODELS.map((m) => ({
+    label: m.label,
+    type: 'radio' as const,
+    checked: currentModel === m.tag,
+    enabled: localActive,
+    click: async (): Promise<void> => {
+      const settings = await readStore();
+      const prev = settings.brainControllerConfig ?? {};
+      const prevLocal = (prev['local-llm'] as Record<string, unknown> | undefined) ?? {};
+      await writeStore({
+        brainControllerConfig: { ...prev, 'local-llm': { ...prevLocal, model: m.tag } },
+      });
+      // No need to swap — the controller re-reads its config on every tick.
+    },
+  }));
+
+  return [
+    { label: 'Controller', enabled: false },
+    ...controllerEntries,
+    { type: 'separator' },
+    {
+      label: localActive ? `Model: ${currentModel}` : 'Model (Local LLM only)',
+      enabled: false,
+    },
+    ...modelEntries,
+    {
+      label: 'More models in Settings...',
+      enabled: localActive,
+      click: () => openSettingsWindow({ hash: 'brain' }),
+    },
+    { type: 'separator' },
+    {
+      label: '🧠 Test brain now',
+      enabled: localActive || activeId === 'hermes',
+      click: async (): Promise<void> => {
+        const result = await forceTickActiveBrain();
+        const { Notification } = await import('electron');
+        new Notification({
+          title: 'Merlin brain test',
+          body: result,
+          silent: true,
+        }).show();
+      },
+    },
+    {
+      label: '🧙 Setup Wizard...',
+      click: async () => {
+        const { openBrainWizardWindow } = await import('./windows/brainWizardWindow');
+        openBrainWizardWindow();
+      },
+    },
+  ];
 }
 
 export interface MerlinMenuActions {
@@ -353,6 +456,7 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
       },
     },
     { label: 'Extensions...', click: () => openSettingsWindow({ hash: 'extensions' }) },
+    { label: 'Brain', submenu: buildBrainSubmenu(settings) },
     { label: 'Settings...', click: () => openSettingsWindow() },
     { label: 'Debug Panel', click: () => createDebugWindow() },
     { type: 'separator' },

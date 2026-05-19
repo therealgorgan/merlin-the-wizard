@@ -1,3 +1,9 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body {
   margin: 0;
@@ -14,12 +20,17 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* Defensive: prevent any deeply-nested element from pushing horizontal
+     scroll on the whole window. Vertical scroll lives on <main>. */
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .app {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
 }
 
 header {
@@ -40,7 +51,18 @@ header .subtitle {
 main {
   flex: 1;
   overflow-y: auto;
+  /* Block accidental horizontal scroll. Any genuinely-wide content (long
+     model names, URLs) should wrap or truncate, not produce a scrollbar. */
+  overflow-x: hidden;
+  min-width: 0;
   padding: 18px 22px;
+}
+
+/* Long inline tokens (model names, URLs in code spans, etc.) must wrap
+   rather than push their container wider. */
+main code {
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 footer {
@@ -133,9 +155,30 @@ section h2 {
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+  /* Allow children to shrink — required to keep wide inputs/selects from
+     pushing the row past container width. */
+  min-width: 0;
+  /* Allow children with flex-basis: 100% (like .ext-desc) to actually wrap
+     onto their own line. Without wrap, the label gets squeezed one-word-
+     per-line and the select/input gets crushed to nothing. */
+  flex-wrap: wrap;
+}
+
+/* Two-column packing for the short toggles in the Behavior section.
+   Wrap with .row-grid in JSX; each direct child becomes a grid cell. */
+.row-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 16px;
+  margin-top: 8px;
+}
+.row-grid .row {
+  margin-top: 0;
 }
 .row label {
-  flex: 0 0 90px;
+  /* Was a hard 90px which clipped longer labels. Min 90, grow to content. */
+  flex: 0 0 auto;
+  min-width: 90px;
   color: #b0b0b8;
   font-size: 12px;
 }
@@ -167,6 +210,85 @@ section h2 {
   padding-bottom: 4px;
   margin: 14px 0 6px 0;
 }
+
+/* Two-column grid for extension flags. Each cell stacks the label and its
+   description vertically. Select-type flags (with a dropdown) span both
+   columns since the select element needs more room. Cells shrink to 1
+   column when the window is narrower than ~600 px. */
+.flag-grid {
+  display: grid;
+  /* 220px min lets two columns fit in the 560px-wide settings window
+     (≈500px content area after padding + scrollbar). At wider widths the
+     grid auto-expands; at narrower (e.g. someone resizes the window) it
+     falls back to 1 column cleanly. */
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px 18px;
+  margin-top: 6px;
+}
+.flag-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Each cell needs to be able to shrink for its description to wrap rather
+     than push the cell past the grid track width. */
+  min-width: 0;
+}
+.flag-cell-wide {
+  /* Span all columns — used for select-type flags whose dropdown is wide. */
+  grid-column: 1 / -1;
+}
+.flag-cell-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e8e8ec;
+  cursor: pointer;
+  font-size: 12px;
+  /* Prevent the label from being squeezed below its content width. */
+  min-width: 0;
+}
+.flag-cell-label input[type='checkbox'] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.flag-cell-label > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.flag-cell-select-label {
+  color: #b0b0b8;
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.flag-cell-select {
+  background: #25252c;
+  color: #e8e8ec;
+  border: 1px solid #3a3a44;
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  min-width: 0;
+  max-width: 100%;
+}
+.flag-cell-select:focus {
+  outline: none;
+  border-color: #5a83d1;
+}
+.flag-cell-desc {
+  /* Smaller, italic, indented under the checkbox aligned with the label. */
+  padding-left: 24px;
+  font-size: 11px;
+  color: #8a8a92;
+  font-style: italic;
+  line-height: 1.4;
+  min-width: 0;
+  word-break: break-word;
+}
+.flag-cell-wide .flag-cell-desc {
+  /* Select-type cells: no checkbox indent needed since there is no checkbox. */
+  padding-left: 0;
+}
 .row .ext-desc {
   flex: 1 0 100%;
   margin-top: 2px;
@@ -174,11 +296,18 @@ section h2 {
   font-size: 11px;
   color: #8a8a92;
   font-style: italic;
-}
-.row input,
-.row select {
-  flex: 1 1 auto;
+  /* Long descriptions must wrap, not blow up the row width. */
   min-width: 0;
+  word-break: break-word;
+}
+/* Text-like inputs and selects need a readable min-width when sharing a row
+   with a label + description. Scope OFF of checkboxes/radios — those have
+   natural sizes and the previous rule was reserving a 200px-wide slot for
+   each checkbox, pushing their labels far to the right. */
+.row input:not([type='checkbox']):not([type='radio']),
+.row select {
+  flex: 1 1 200px;
+  min-width: 200px;
   max-width: 100%;
   background: #25252c;
   color: #e8e8ec;
@@ -187,6 +316,12 @@ section h2 {
   padding: 6px 8px;
   font-size: 12px;
   font-family: inherit;
+}
+.row input[type='checkbox'],
+.row input[type='radio'] {
+  flex: 0 0 auto;
+  min-width: 0;
+  width: auto;
 }
 .row input:focus,
 .row select:focus {

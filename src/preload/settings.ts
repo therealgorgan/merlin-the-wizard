@@ -45,6 +45,14 @@ const api: SettingsApi = {
     >,
   setHermesProfile: (profile) =>
     ipcRenderer.invoke(IPC.settingsSetHermesProfile, profile) as Promise<void>,
+  openBrainWizard: () =>
+    ipcRenderer.invoke(IPC.brainWizardOpen) as Promise<void>,
+  forceBrainTick: () =>
+    ipcRenderer.invoke(IPC.brainForceTick) as Promise<string>,
+  listOllamaModels: () =>
+    ipcRenderer.invoke(IPC.brainWizardListOllamaModels) as Promise<
+      Array<{ name: string; sizeBytes: number }>
+    >,
 };
 
 contextBridge.exposeInMainWorld('settingsApi', api);

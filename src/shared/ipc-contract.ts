@@ -104,6 +104,23 @@ export const IPC = {
   windowDrag: 'window:drag',
   windowDragEnd: 'window:dragEnd',
   windowClose: 'window:close',
+
+  // brain (v0.5.0)
+  brainForceTick: 'brain:forceTick',
+
+  // brain wizard (v0.5.0)
+  brainWizardOpen: 'brainWizard:open',
+  brainWizardClose: 'brainWizard:close',
+  brainWizardDetectHardware: 'brainWizard:detectHardware',
+  brainWizardScanForOllama: 'brainWizard:scanForOllama',
+  brainWizardProbeOllama: 'brainWizard:probeOllama',
+  brainWizardListOllamaModels: 'brainWizard:listOllamaModels',
+  brainWizardPullOllamaModel: 'brainWizard:pullOllamaModel',
+  brainWizardPullProgress: 'brainWizard:pullProgress',
+  brainWizardCancelPull: 'brainWizard:cancelPull',
+  brainWizardTestOllamaModel: 'brainWizard:testOllamaModel',
+  brainWizardProbeHermes: 'brainWizard:probeHermes',
+  brainWizardApply: 'brainWizard:apply',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -198,6 +215,9 @@ export interface StoreSnapshot {
   hermesEndpoint: string;
   voiceEngine: string;
   voiceName: string;
+  /** Mute clippyjs sound effects (the animation SFX baked into the original
+   *  Microsoft Agent .acs files). Also controllable from the tray. */
+  muteSounds: boolean;
   character: string;
   userName: string | null;
   summonHotkey: string;
@@ -322,6 +342,15 @@ export interface SettingsApi {
   discoverAllHermesProfiles: () => Promise<HermesProfileForUi[]>;
   getHermesProfiles: () => Promise<HermesProfileForUi[]>;
   setHermesProfile: (profile: HermesProfileForUi) => Promise<void>;
+  /** Opens the dedicated Brain Setup Wizard window (v0.5.0). */
+  openBrainWizard: () => Promise<void>;
+  /** Force the active brain controller to make one decision right now,
+   *  bypassing the idle-floor + intent gates. Returns a one-line summary
+   *  of what it chose. */
+  forceBrainTick: () => Promise<string>;
+  /** Lists models currently installed in the user's Ollama instance.
+   *  Used by Settings → Brain model picker to badge "installed" entries. */
+  listOllamaModels: () => Promise<Array<{ name: string; sizeBytes: number }>>;
 }
 
 export interface HermesProfileForUi {
@@ -335,6 +364,104 @@ export interface DebugApi {
   hide: () => void;
 }
 
+// ── Brain Setup Wizard (v0.5.0) ───────────────────────────────────────────
+
+export interface HardwareInfo {
+  totalRamGb: number;
+  freeRamGb: number;
+  cpuModel: string;
+  cpuCores: number;
+  /** Best-effort GPU detection. Empty array if detection failed or no GPU. */
+  gpus: Array<{ name: string; vramMb: number | null }>;
+  platform: NodeJS.Platform;
+}
+
+export interface OllamaProbeResult {
+  reachable: boolean;
+  version?: string;
+  installedModels: Array<{ name: string; sizeBytes: number; modifiedAt: string }>;
+  error?: string;
+}
+
+export interface OllamaScanAttempt {
+  url: string;
+  source: 'stored' | 'env' | 'localhost' | 'loopback' | 'all-interfaces' | 'process' | 'alt-port';
+  ok: boolean;
+  error?: string;
+}
+
+export interface OllamaScanResult {
+  /** Best endpoint that responded, or null if none did. Includes the model list. */
+  detected: (OllamaProbeResult & { url: string }) | null;
+  /** Every probe attempt we made, in order, with success/failure. Surfaced
+   *  in the UI so the user can see what we tried. */
+  attempted: OllamaScanAttempt[];
+  /** If we found a running ollama.exe via PowerShell, this is what's listening. */
+  processInfo?: { pid: number; port: number; localAddress: string };
+  /** Value of OLLAMA_HOST env var if set. */
+  ollamaHostEnv?: string;
+}
+
+export interface OllamaPullProgress {
+  /** Stable id correlating progress events to a single pull request. */
+  pullId: string;
+  status: string; // e.g. "pulling 8de95da25cb6", "downloading", "success", "error"
+  digest?: string;
+  total?: number; // bytes
+  completed?: number; // bytes
+  /** Set on terminal events. 'done' = success, 'error' = failed/cancelled. */
+  done?: 'done' | 'error';
+  error?: string;
+}
+
+export interface OllamaTestResult {
+  ok: boolean;
+  /** Whatever the model said when asked a simple test prompt. */
+  reply?: string;
+  latencyMs?: number;
+  error?: string;
+}
+
+export interface HermesProbeResult {
+  reachable: boolean;
+  /** Models advertised by /v1/models. */
+  models: string[];
+  /** Profiles discovered across known Hermes ports (if any). */
+  profiles: Array<{ name: string; url: string }>;
+  error?: string;
+}
+
+export interface BrainApplyConfig {
+  controllerId: 'default' | 'local-llm' | 'hermes';
+  /** Per-controller config that gets merged into brainControllerConfig[id]. */
+  config?: Record<string, unknown>;
+}
+
+export interface BrainWizardApi {
+  detectHardware: () => Promise<HardwareInfo>;
+  /** Scans likely Ollama endpoints in parallel + inspects running processes.
+   *  Returns the first responder + the full attempt log for transparency. */
+  scanForOllama: () => Promise<OllamaScanResult>;
+  probeOllama: (endpoint?: string) => Promise<OllamaProbeResult>;
+  listOllamaModels: (endpoint?: string) => Promise<OllamaProbeResult['installedModels']>;
+  /** Starts a pull. Returns the pullId; subscribe via onPullProgress to track. */
+  pullOllamaModel: (model: string, endpoint?: string) => Promise<{ pullId: string }>;
+  cancelPull: (pullId: string) => Promise<void>;
+  onPullProgress: (cb: (ev: OllamaPullProgress) => void) => () => void;
+  testOllamaModel: (model: string, endpoint?: string) => Promise<OllamaTestResult>;
+  probeHermes: (endpoint: string, apiKey: string) => Promise<HermesProbeResult>;
+  /** Persists the chosen brain config + hot-swaps the active controller. */
+  apply: (cfg: BrainApplyConfig) => Promise<void>;
+  /** Opens an external link in the default browser (for Ollama download). */
+  openExternal: (url: string) => Promise<void>;
+  /** Closes the wizard window. */
+  close: () => void;
+  /** Reads the current store snapshot (so wizard can pre-fill values). */
+  getSnapshot: () => Promise<StoreSnapshot>;
+  setSecret: (name: string, value: string) => Promise<void>;
+  hasSecret: (name: string) => Promise<boolean>;
+}
+
 declare global {
   interface Window {
     spriteApi?: SpriteApi;
@@ -342,5 +469,6 @@ declare global {
     settingsApi?: SettingsApi;
     debugApi?: DebugApi;
     panelApi?: PanelApi;
+    brainWizardApi?: BrainWizardApi;
   }
 }

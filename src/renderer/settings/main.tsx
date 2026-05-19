@@ -8,6 +8,7 @@ import type {
 } from '@shared/ipc-contract';
 import { EDGE_VOICES } from '@shared/edge-voices';
 import { EXTENSIONS_CATALOG } from '@shared/extensions-catalog';
+import { BRAIN_MODEL_CATALOG } from '@shared/brain-models-catalog';
 
 declare global {
   interface Window {
@@ -303,6 +304,172 @@ function ProviderCard(props: {
   );
 }
 
+// Brain model catalog now lives in src/shared/brain-models-catalog.ts so the
+// Brain Setup Wizard and Settings → Brain stay in sync.
+
+/** Brain-model picker — surfaces curated catalog + user's installed models
+ *  with response-time estimates. Lets users swap on the fly without
+ *  re-running the wizard. Only meaningful when brainController === 'local-llm'. */
+function BrainModelPicker(props: {
+  active: boolean;
+  currentModel: string;
+  onSelect: (model: string) => void;
+}): React.ReactElement | null {
+  const { active, currentModel, onSelect } = props;
+  const [installed, setInstalled] = useState<Set<string>>(new Set());
+  const [customMode, setCustomMode] = useState(false);
+  const [customValue, setCustomValue] = useState(currentModel);
+
+  useEffect(() => {
+    if (!active || !api) return;
+    void api.listOllamaModels()
+      .then((list) => setInstalled(new Set(list.map((m) => m.name))))
+      .catch(() => setInstalled(new Set()));
+  }, [active]);
+
+  if (!active) return null;
+
+  const curated = BRAIN_MODEL_CATALOG.map((m) => m.tag);
+  const inCatalog = new Set(curated);
+  // Show installed-but-not-curated models at the top of the list too.
+  const extraInstalled = Array.from(installed).filter((n) => !inCatalog.has(n));
+  const isCustom = customMode || (!inCatalog.has(currentModel) && !installed.has(currentModel));
+
+  return (
+    <div className="row" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+      <label htmlFor="brain-model" style={{ flex: '0 0 90px' }}>Model</label>
+      {isCustom ? (
+        <>
+          <input
+            id="brain-model-custom"
+            type="text"
+            value={customValue}
+            placeholder="e.g. llama3.2:3b"
+            onChange={(e) => setCustomValue(e.target.value)}
+            onBlur={() => {
+              if (customValue.trim() && customValue.trim() !== currentModel) {
+                onSelect(customValue.trim());
+              }
+            }}
+            style={{ flex: '1 1 auto' }}
+          />
+          <button
+            className="secondary"
+            onClick={() => {
+              setCustomMode(false);
+              setCustomValue(currentModel);
+            }}
+            style={{ flex: '0 0 auto' }}
+          >
+            ↺ Catalog
+          </button>
+        </>
+      ) : (
+        <select
+          id="brain-model"
+          value={currentModel}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') {
+              setCustomMode(true);
+              setCustomValue(currentModel);
+            } else {
+              onSelect(e.target.value);
+            }
+          }}
+        >
+          {extraInstalled.length > 0 ? (
+            <optgroup label="✓ Installed (not in catalog)">
+              {extraInstalled.map((tag) => (
+                <option key={tag} value={tag}>{tag} — installed</option>
+              ))}
+            </optgroup>
+          ) : null}
+          <optgroup label="Curated for brain use">
+            {BRAIN_MODEL_CATALOG.map((m) => {
+              const isInstalled = installed.has(m.tag);
+              return (
+                <option key={m.tag} value={m.tag}>
+                  {m.label} · {m.sizeGb < 1 ? `${(m.sizeGb * 1024).toFixed(0)} MB` : `${m.sizeGb} GB`} · warm {m.warmSec}{isInstalled ? ' · installed ✓' : ''}
+                </option>
+              );
+            })}
+          </optgroup>
+          <option value="__custom__">Custom model tag…</option>
+        </select>
+      )}
+      <div className="status ext-desc" style={{ flex: '1 0 100%' }}>
+        {(() => {
+          const meta = BRAIN_MODEL_CATALOG.find((m) => m.tag === currentModel);
+          if (meta) {
+            const isInstalled = installed.has(currentModel);
+            return (
+              <>
+                {isInstalled ? '✓ Installed. ' : '⚠ Not installed yet — re-run the Brain Setup Wizard to pull. '}
+                {meta.notes} (Cold-load {meta.coldSec}, warm response {meta.warmSec}.)
+              </>
+            );
+          }
+          return installed.has(currentModel)
+            ? `✓ "${currentModel}" is installed and ready.`
+            : `⚠ "${currentModel}" is not in your installed list — Ollama will try to pull on first tick. Use the Brain Setup Wizard for a guided pull with progress.`;
+        })()}
+      </div>
+    </div>
+  );
+}
+
+/** A standalone button + status line for forcing one brain tick on demand.
+ *  Useful for verifying local-llm / hermes brains without waiting for the
+ *  normal 5-min cadence. */
+function BrainTestButton(): React.ReactElement {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  return (
+    <div className="row" style={{ marginTop: 12 }}>
+      <button
+        disabled={busy}
+        onClick={async () => {
+          if (!api) return;
+          setBusy(true);
+          setResult(null);
+          try {
+            const r = await api.forceBrainTick();
+            setResult(r);
+          } catch (err) {
+            setResult(err instanceof Error ? err.message : String(err));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? '⏳ Asking the brain…' : '🧠 Test brain now'}
+      </button>
+      <div className="status ext-desc">
+        Forces one decision call right now, bypassing the idle-floor + intent
+        gates. Reports what the brain chose. Cold-loading an 8B model can take
+        30-90s; subsequent calls return in 5-10s.
+        {result ? (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '8px 12px',
+              background: 'rgba(96,144,255,0.1)',
+              borderLeft: '3px solid #6090ff',
+              borderRadius: 4,
+              fontFamily: "'Cascadia Mono', Consolas, monospace",
+              fontSize: 12,
+              color: '#cbe4ff',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {result}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function App(): React.ReactElement {
   const [providers, setProviders] = useState<ProviderInfoForUi[]>([]);
   const [settings, setSettings] = useState<StoreSnapshot | null>(null);
@@ -388,7 +555,14 @@ function App(): React.ReactElement {
       </header>
       <main>
         <section>
-          <h2>AI Provider</h2>
+          <h2>Chat (Conversational LLM)</h2>
+          <div className="status">
+            The model that answers when you <strong>chat with Merlin</strong> —
+            streams text, calls tools, drives his replies. Cloud or local. This
+            is <em>separate</em> from the <a href="#brain">Brain LLM</a> below
+            (which decides what Merlin does autonomously when you&apos;re not
+            chatting).
+          </div>
           {providers.map((p) => (
             <ProviderCard
               key={p.id}
@@ -666,7 +840,7 @@ function App(): React.ReactElement {
         <section>
           <h2>Behavior</h2>
           <div className="row">
-            <label htmlFor="display-mode">Display mode</label>
+            <label htmlFor="display-mode">Chat Style</label>
             <select
               id="display-mode"
               value={settings.displayMode}
@@ -683,6 +857,22 @@ function App(): React.ReactElement {
             transparent sprite with a yellow speech bubble. <strong>Modern</strong>
             adds a docked chat panel alongside the sprite: full conversation thread,
             multi-line input, inline attachment previews, per-turn regenerate.
+          </div>
+          <div className="row">
+            <label htmlFor="mute-sfx">
+              <input
+                id="mute-sfx"
+                type="checkbox"
+                checked={settings.muteSounds === true}
+                onChange={(e) => void update({ muteSounds: e.target.checked })}
+              />{' '}
+              Mute clippyjs animation sound effects
+            </label>
+            <div className="status ext-desc">
+              Silences the little &quot;ding&quot; / &quot;poof&quot; sounds baked into
+              the original Microsoft Agent animation files. Same as the tray
+              menu&apos;s &quot;Mute Sound Effects&quot; toggle.
+            </div>
           </div>
           <div className="row">
             <label htmlFor="appearance">Sprite appearance</label>
@@ -716,50 +906,52 @@ function App(): React.ReactElement {
               }
             />
           </div>
-          <div className="row">
-            <label htmlFor="welcome">
-              <input
-                id="welcome"
-                type="checkbox"
-                checked={settings.showWelcomeOnStart}
-                onChange={(e) => void update({ showWelcomeOnStart: e.target.checked })}
-              />{' '}
-              Show welcome greeting on startup
-            </label>
-          </div>
-          <div className="row">
-            <label htmlFor="speak-welcome">
-              <input
-                id="speak-welcome"
-                type="checkbox"
-                checked={settings.speakWelcome}
-                disabled={!settings.showWelcomeOnStart || settings.voiceEngine === 'off'}
-                onChange={(e) => void update({ speakWelcome: e.target.checked })}
-              />{' '}
-              Speak the welcome aloud
-            </label>
-          </div>
-          <div className="row">
-            <label htmlFor="idle-thoughts">
-              <input
-                id="idle-thoughts"
-                type="checkbox"
-                checked={settings.idleThoughtsEnabled}
-                onChange={(e) => void update({ idleThoughtsEnabled: e.target.checked })}
-              />{' '}
-              Idle thoughts (occasional unprompted remarks)
-            </label>
-          </div>
-          <div className="row">
-            <label htmlFor="autostart">
-              <input
-                id="autostart"
-                type="checkbox"
-                checked={settings.autoStart}
-                onChange={(e) => void update({ autoStart: e.target.checked })}
-              />{' '}
-              Start with Windows
-            </label>
+          <div className="row-grid">
+            <div className="row">
+              <label htmlFor="welcome">
+                <input
+                  id="welcome"
+                  type="checkbox"
+                  checked={settings.showWelcomeOnStart}
+                  onChange={(e) => void update({ showWelcomeOnStart: e.target.checked })}
+                />{' '}
+                Show welcome greeting on startup
+              </label>
+            </div>
+            <div className="row">
+              <label htmlFor="speak-welcome">
+                <input
+                  id="speak-welcome"
+                  type="checkbox"
+                  checked={settings.speakWelcome}
+                  disabled={!settings.showWelcomeOnStart || settings.voiceEngine === 'off'}
+                  onChange={(e) => void update({ speakWelcome: e.target.checked })}
+                />{' '}
+                Speak the welcome aloud
+              </label>
+            </div>
+            <div className="row">
+              <label htmlFor="idle-thoughts">
+                <input
+                  id="idle-thoughts"
+                  type="checkbox"
+                  checked={settings.idleThoughtsEnabled}
+                  onChange={(e) => void update({ idleThoughtsEnabled: e.target.checked })}
+                />{' '}
+                Idle thoughts (occasional unprompted remarks)
+              </label>
+            </div>
+            <div className="row">
+              <label htmlFor="autostart">
+                <input
+                  id="autostart"
+                  type="checkbox"
+                  checked={settings.autoStart}
+                  onChange={(e) => void update({ autoStart: e.target.checked })}
+                />{' '}
+                Start with Windows
+              </label>
+            </div>
           </div>
         </section>
 
@@ -782,59 +974,118 @@ function App(): React.ReactElement {
           ).map(([group, flags]) => (
             <div key={group} className="extensions-group">
               <h3 className="extensions-group-title">{group}</h3>
-              {flags.map((flag) => {
-                const stored = settings.extensions?.[flag.key];
-                const current = stored !== undefined ? stored : flag.default;
-                if (flag.kind === 'boolean') {
+              <div className="flag-grid">
+                {flags.map((flag) => {
+                  const stored = settings.extensions?.[flag.key];
+                  const current = stored !== undefined ? stored : flag.default;
+                  if (flag.kind === 'boolean') {
+                    return (
+                      <div key={flag.key} className="flag-cell">
+                        <label htmlFor={`ext-${flag.key}`} className="flag-cell-label">
+                          <input
+                            id={`ext-${flag.key}`}
+                            type="checkbox"
+                            checked={current === true}
+                            onChange={(e) =>
+                              void update({
+                                extensions: {
+                                  ...(settings.extensions ?? {}),
+                                  [flag.key]: e.target.checked,
+                                },
+                              })
+                            }
+                          />{' '}
+                          <span>{flag.label}</span>
+                        </label>
+                        <div className="flag-cell-desc">{flag.description}</div>
+                      </div>
+                    );
+                  }
                   return (
-                    <div key={flag.key} className="row">
-                      <label htmlFor={`ext-${flag.key}`}>
-                        <input
-                          id={`ext-${flag.key}`}
-                          type="checkbox"
-                          checked={current === true}
-                          onChange={(e) =>
-                            void update({
-                              extensions: {
-                                ...(settings.extensions ?? {}),
-                                [flag.key]: e.target.checked,
-                              },
-                            })
-                          }
-                        />{' '}
+                    <div key={flag.key} className="flag-cell flag-cell-wide">
+                      <label htmlFor={`ext-${flag.key}`} className="flag-cell-select-label">
                         {flag.label}
                       </label>
-                      <div className="status ext-desc">{flag.description}</div>
+                      <select
+                        id={`ext-${flag.key}`}
+                        value={typeof current === 'string' ? current : flag.default}
+                        onChange={(e) =>
+                          void update({
+                            extensions: {
+                              ...(settings.extensions ?? {}),
+                              [flag.key]: e.target.value,
+                            },
+                          })
+                        }
+                        className="flag-cell-select"
+                      >
+                        {flag.options.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flag-cell-desc">{flag.description}</div>
                     </div>
                   );
-                }
-                return (
-                  <div key={flag.key} className="row">
-                    <label htmlFor={`ext-${flag.key}`}>{flag.label}</label>
-                    <select
-                      id={`ext-${flag.key}`}
-                      value={typeof current === 'string' ? current : flag.default}
-                      onChange={(e) =>
-                        void update({
-                          extensions: {
-                            ...(settings.extensions ?? {}),
-                            [flag.key]: e.target.value,
-                          },
-                        })
-                      }
-                    >
-                      {flag.options.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="status ext-desc">{flag.description}</div>
-                  </div>
-                );
-              })}
+                })}
+              </div>
             </div>
           ))}
+        </section>
+
+        <section id="brain">
+          <h2>Brain (Autonomous LLM)</h2>
+          <div className="status">
+            <strong>Independent of the Chat LLM at the top of this window.</strong>{' '}
+            The Brain is what decides what Merlin does <em>while you&apos;re NOT
+            chatting</em> — idle thoughts, wandering, gestures. Fires once every
+            ~5 minutes. The <strong>Default</strong> controller uses no LLM at
+            all (just a timer); <strong>Local LLM</strong> uses an Ollama model
+            on your own machine (free, private, offline-capable);{' '}
+            <strong>Hermes Agent</strong> uses a self-hosted profile. Run the
+            Setup Wizard to walk through Local LLM end-to-end.
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="primary" onClick={() => void api.openBrainWizard()}>
+              🧙 Open Brain Setup Wizard…
+            </button>
+          </div>
+          <div className="row" style={{ marginTop: 12 }}>
+            <label htmlFor="brain-ctrl">Active brain controller</label>
+            <select
+              id="brain-ctrl"
+              value={settings.brainController ?? 'default'}
+              onChange={(e) => void update({ brainController: e.target.value })}
+            >
+              <option value="default">Default — timer-based (offline, free)</option>
+              <option value="local-llm">Local LLM — Ollama-driven (free, private)</option>
+              <option value="hermes">Hermes Agent — self-hosted profile</option>
+            </select>
+            <div className="status ext-desc">
+              Switching takes effect immediately. If you pick local-llm or
+              hermes without running the wizard, Merlin will silently fall back
+              to no-op on each tick until you finish configuring it.
+            </div>
+          </div>
+          <BrainModelPicker
+            active={(settings.brainController ?? 'default') === 'local-llm'}
+            currentModel={
+              (settings.brainControllerConfig?.['local-llm'] as { model?: string } | undefined)
+                ?.model ?? 'llama3.2:3b'
+            }
+            onSelect={(model) => {
+              const prev = settings.brainControllerConfig ?? {};
+              const prevLocal = (prev['local-llm'] as Record<string, unknown> | undefined) ?? {};
+              void update({
+                brainControllerConfig: {
+                  ...prev,
+                  'local-llm': { ...prevLocal, model },
+                },
+              });
+            }}
+          />
+          <BrainTestButton />
         </section>
 
         <section>

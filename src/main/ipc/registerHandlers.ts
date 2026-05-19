@@ -50,11 +50,14 @@ import {
 import { getActiveSpriteHost } from '../activeSurface';
 import { loadHistory, getHistorySnapshot } from '../storage/conversationStore';
 import { registerAudioStateIpc } from '../voice/audioState';
+import { registerBrainWizardHandlers } from './brainWizardHandlers';
 import { logger } from '../logger';
 
 export function registerIpcHandlers(): void {
   // Renderer-side audio-queue state updates feed the speaking-cycle gate.
   registerAudioStateIpc();
+  // Brain Setup Wizard (v0.5.0): hardware probe, Ollama pull/test, apply.
+  registerBrainWizardHandlers();
 
   ipcMain.handle(IPC.spritePlay, async (_e, name: string) => {
     if (!isAnimationName(name)) {
@@ -299,6 +302,7 @@ export function registerIpcHandlers(): void {
     hermesEndpoint: s.hermesEndpoint,
     voiceEngine: s.voiceEngine,
     voiceName: s.voiceName,
+    muteSounds: Boolean(s.muteSounds),
     character: s.character,
     userName: s.userName,
     summonHotkey: s.summonHotkey,
@@ -467,6 +471,11 @@ export function registerIpcHandlers(): void {
     }
     const data = (await res.json()) as { data?: Array<{ id?: string }> };
     return (data.data ?? []).map((m) => m.id ?? '').filter(Boolean);
+  });
+
+  ipcMain.handle(IPC.brainForceTick, async (): Promise<string> => {
+    const { forceTickActiveBrain } = await import('../brainSupervisor');
+    return forceTickActiveBrain();
   });
 
   ipcMain.handle(IPC.settingsOpen, () => {

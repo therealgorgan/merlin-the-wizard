@@ -4,10 +4,20 @@ import type { Mood } from '../feelings';
 import type { BrainContext } from './types';
 
 // Build a BrainContext singleton wired to the live modules. Controllers
-// pass through here to act on the world. Async-import the implementation
-// modules so we don't trigger circular imports at module-load time
-// (brain → animationController → ... → brain).
+// pass through here to act on the world. All imports are top-level static —
+// the previous lazy-require pattern was an attempt to dodge a circular
+// import that doesn't actually exist (animationController never imports
+// brain*), and dynamic require('../...') doesn't survive electron-vite
+// bundling (relative paths only exist in source, not in the bundled
+// out/main/index.js — every tick was crashing with "Cannot find module").
 
+import {
+  getIntent as anim_getIntent,
+  getEnergy as anim_getEnergy,
+  getTimeOfDay as anim_getTimeOfDay,
+  playInline as anim_playInline,
+  nudgeForIdleThought as anim_nudgeForIdleThought,
+} from '../animationController';
 import { getSpriteWindow, smoothMoveSpriteTo } from '../windows/spriteWindow';
 import { getBubbleWindow, showBubble } from '../windows/bubbleWindow';
 import {
@@ -22,6 +32,7 @@ import { logger } from '../logger';
 import { screen } from 'electron';
 
 let lastInteractionMarkedAt = Date.now();
+let cachedDisplayMode: 'classic' | 'modern' = 'classic';
 
 export function bumpInteractionMark(): void {
   lastInteractionMarkedAt = Date.now();
@@ -44,22 +55,13 @@ export function buildBrainContext(): BrainContext {
       return Date.now() - getLastInteractionMark();
     },
     getIntent(): Intent {
-      // Lazy require to avoid circular module-load (animationController
-      // imports nothing brain-related at top level, but this keeps the
-      // dependency graph clean either way).
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-      const mod = require('../animationController') as typeof import('../animationController');
-      return mod.getIntent();
+      return anim_getIntent();
     },
     getEnergy(): number {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-      const mod = require('../animationController') as typeof import('../animationController');
-      return mod.getEnergy();
+      return anim_getEnergy();
     },
     getTimeOfDay(): TimeOfDay {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-      const mod = require('../animationController') as typeof import('../animationController');
-      return mod.getTimeOfDay();
+      return anim_getTimeOfDay();
     },
     async getMood(): Promise<Mood> {
       return getMood();
@@ -81,19 +83,14 @@ export function buildBrainContext(): BrainContext {
       return Boolean(w && w.isVisible());
     },
     displayMode(): 'classic' | 'modern' {
-      // Synchronous read — the cache in the store module is hot.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-      const store = require('../storage/store') as typeof import('../storage/store');
-      // The store's read() is async; fall back to 'classic' if we hit before
-      // the cache is warm. In practice this is called on tick paths well
-      // after boot — cache will be warm.
-      // To stay sync, look at the unexported cache via JSON read if needed.
-      // Cheaper: read displayMode from the renderer's perspective is rare.
-      // For now, just await a quick read (we'll relax later if needed).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cachedAny = (store as any)._cache as { displayMode?: 'classic' | 'modern' } | undefined;
-      if (cachedAny?.displayMode) return cachedAny.displayMode;
-      return 'classic';
+      // The store module exposes an async read(); we cache the last-seen
+      // value in module scope here and update it asynchronously. First call
+      // returns 'classic' until the first read completes — fine because
+      // brain ticks happen well after boot.
+      void readStore().then((s) => {
+        cachedDisplayMode = s.displayMode === 'modern' ? 'modern' : 'classic';
+      }).catch(() => { /* noop */ });
+      return cachedDisplayMode;
     },
 
     // ── Acting ───────────────────────────────────────────────────────────
@@ -138,14 +135,10 @@ export function buildBrainContext(): BrainContext {
       }
     },
     playAnimation(name: AnimationName): void {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-      const mod = require('../animationController') as typeof import('../animationController');
-      mod.playInline(name);
+      anim_playInline(name);
     },
     nudgeAttention(): void {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-      const mod = require('../animationController') as typeof import('../animationController');
-      mod.nudgeForIdleThought();
+      anim_nudgeForIdleThought();
     },
     log(message: string, meta?: unknown): void {
       logger.debug(`[brain] ${message}`, meta ?? '');

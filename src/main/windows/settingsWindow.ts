@@ -24,8 +24,13 @@ export function openSettingsWindow(opts: OpenSettingsOptions = {}): BrowserWindo
   }
 
   settingsWindow = new BrowserWindow({
-    width: 560,
-    height: 720,
+    // 720px gives the Extensions 2-column grid comfortable breathing room
+    // (was 560px which crowded the labels into 1 column at the chosen
+    // grid-track minimum).
+    width: 720,
+    height: 760,
+    minWidth: 520,
+    minHeight: 480,
     title: 'Merlin — Settings',
     autoHideMenuBar: true,
     backgroundColor: '#1a1a1f',

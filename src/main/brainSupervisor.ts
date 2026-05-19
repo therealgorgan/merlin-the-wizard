@@ -70,3 +70,16 @@ export function noteIdleThoughtDismissed(id: string): void {
   dismissedThoughtIds.add(id);
   current?.onIdleThoughtDismissed?.(id);
 }
+
+/** Run the active brain's decision logic once on demand, bypassing the
+ *  normal idle-floor + intent gates. Returns a short human-readable summary
+ *  of what it chose (or why it couldn't). Used by Settings → Brain → "Test
+ *  brain now" for verification without waiting for the 5-min cadence. */
+export async function forceTickActiveBrain(): Promise<string> {
+  if (!current) return 'no brain controller active';
+  if (!current.forceTick) {
+    return `the '${current.id}' controller doesn't support on-demand ticks (default brain has no LLM to test)`;
+  }
+  if (!ctx) ctx = buildBrainContext();
+  return current.forceTick(ctx);
+}

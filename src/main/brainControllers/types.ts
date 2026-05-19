@@ -42,6 +42,12 @@ export interface BrainController {
   onTurnComplete?(): void;
   /** Optional: user dismissed an idle thought we emitted. */
   onIdleThoughtDismissed?(id: string): void;
+  /** Optional: run the brain's decision logic once on demand, bypassing
+   *  idle-floor + intent gates. Used by Settings → Brain → "Test brain now"
+   *  to verify the LLM is reachable + returning the right schema without
+   *  waiting for the normal tick cadence. Returns a human-readable summary
+   *  of what the brain chose. */
+  forceTick?(ctx: BrainContext): Promise<string>;
 }
 
 export interface BrainControllerFactory {
