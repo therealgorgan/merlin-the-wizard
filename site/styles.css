@@ -1025,6 +1025,17 @@ footer .legal {
   color: var(--ink-soft);
   margin-left: auto;
 }
+.release .download-row.source-only a { color: var(--ink-soft); }
+.release .download-row .source-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(26,21,48,.06);
+}
 
 /* ---------- About page ---------- */
 .about-wrap {
