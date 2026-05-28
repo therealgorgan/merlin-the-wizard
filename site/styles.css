@@ -67,17 +67,43 @@ img { max-width: 100%; display: block; }
   font-size: 22px;
   letter-spacing: .5px;
   color: var(--ink);
+  text-decoration: none;
   display: flex; align-items: center; gap: 10px;
+  transition: color .25s ease;
 }
-.nav .logo .star { color: var(--gold); }
+.nav .logo:hover { color: var(--purple); }
+.nav .logo .star {
+  color: var(--gold);
+  display: inline-block;
+  transition: transform .5s cubic-bezier(.34,1.56,.64,1), text-shadow .25s ease;
+}
+.nav .logo:hover .star {
+  transform: rotate(180deg) scale(1.18);
+  text-shadow: 0 0 12px rgba(245,197,66,.7);
+}
 .nav .pages { display: flex; gap: 22px; margin-left: 22px; }
 .nav .pages a {
   color: var(--ink);
   font-size: 14px;
   font-weight: 500;
   letter-spacing: .3px;
+  text-decoration: none;
+  position: relative;
+  padding: 4px 0;
+  transition: color .2s ease;
 }
-.nav .pages a:hover { color: var(--purple-light); }
+.nav .pages a::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--purple), var(--gold));
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform .25s cubic-bezier(.4,0,.2,1);
+}
+.nav .pages a:hover { color: var(--purple); }
+.nav .pages a:hover::after { transform: scaleX(1); }
 .nav .spacer { flex: 1; }
 .nav .v-pill {
   background: rgba(59,29,110,.08);
