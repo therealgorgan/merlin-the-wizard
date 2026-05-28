@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>About — Merlin the Wizard</title>
+<meta name="description" content="The story behind Merlin: a love letter to Microsoft Agent, rebuilt for the modern age." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=IM+Fell+English:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" type="image/png" href="merlin.png" />
+</head>
+<body>
+
+<!-- ============================== NAV ============================== -->
+<nav class="nav" data-screen-label="Nav">
+  <a href="index.html" class="logo">
+    <span class="star">✦</span> Merlin <span style="font-family:var(--sans);font-weight:400;font-size:14px;color:var(--ink-soft);">the Wizard</span>
+  </a>
+  <div class="pages">
+    <a href="index.html#features">Features</a>
+    <a href="index.html#brains">Brains</a>
+    <a href="index.html#quickstart">Quickstart</a>
+    <a href="screenshots.html">Screenshots</a>
+    <a href="changelog.html">Changelog</a>
+    <a href="about.html" style="color:var(--purple);font-weight:600;">About</a>
+  </div>
+  <div class="spacer"></div>
+  <span class="v-pill">v0.5.1</span>
+  <a class="gh-mini" href="https://github.com/therealgorgan/merlin-the-wizard" target="_blank" rel="noopener">★ Star</a>
+</nav>
+
+<!-- ============================== HEADER ============================== -->
+<header class="page-header" data-screen-label="About header">
+  <div class="header-sparkles" aria-hidden="true">
+    <span class="sparkle" style="top:30%; left:58%; animation-delay:.2s">✦</span>
+    <span class="sparkle" style="top:60%; left:78%; animation-delay:.9s; font-size:12px">✧</span>
+    <span class="sparkle" style="top:18%; left:88%; animation-delay:1.4s">✦</span>
+  </div>
+  <div class="eyebrow">Once upon a desktop</div>
+  <h1>About Merlin</h1>
+  <p class="lede">
+    A love letter to one of the strangest, most ambitious experiments Microsoft ever
+    shipped — rebuilt for an age where the assistant on your desktop can finally hold
+    its end of the conversation.
+  </p>
+</header>
+
+<!-- ============================== CONTENT ============================== -->
+<main class="about-wrap" data-screen-label="About content">
+
+  <!-- THE STORY -->
+  <section class="about-section" data-screen-label="The story">
+    <h2><span class="num">01</span> The story</h2>
+    <p>
+      In 1997, Microsoft shipped <a href="https://en.wikipedia.org/wiki/Microsoft_Agent" target="_blank" rel="noopener">Microsoft Agent</a> —
+      a framework for putting animated characters on the desktop that could speak,
+      listen, and respond. Merlin was one of the originals. Genie, Robby, Peedy too.
+      Clippy got famous; the wizards got forgotten.
+    </p>
+    <p>
+      The whole thing was retired in 2009. Speech recognition was bad. The characters
+      didn't really understand anything. The dream of an actual companion on your
+      desktop got quietly filed away with WordArt and Comic Sans.
+    </p>
+
+    <div class="story-band" data-screen-label="Quote">
+      <p>"What if Merlin came back, but this time he could actually think?"</p>
+      <cite>— The whole pitch, basically</cite>
+    </div>
+
+    <p>
+      That's what this is. The same wizard. The same sprite engine. The same
+      desktop-floating wave-when-you-look-at-him energy. But this time the brain is a
+      modern language model — yours, on your machine, or one you pay an API for. He
+      can see what's on your screen. He can search the web. He remembers what you
+      told him last time.
+    </p>
+    <p class="muted">
+      It's a tribute. It's a working desktop app. It's open source. Microsoft has not
+      endorsed any of this.
+    </p>
+  </section>
+
+  <!-- TIMELINE -->
+  <section class="about-section" data-screen-label="Brief history">
+    <h2><span class="num">02</span> A brief history of the wizard</h2>
+    <div class="timeline-mini">
+      <div class="year">1997</div>
+      <div class="event">Microsoft Agent ships with Internet Explorer 4. Merlin debuts in a robe full of stars.</div>
+      <div class="year">2001</div>
+      <div class="event">Office Assistants (Clippy &amp; co.) get the axe. Agent characters carry on quietly.</div>
+      <div class="year">2009</div>
+      <div class="event">Microsoft Agent is officially retired in Windows 7. The wizard goes to sleep.</div>
+      <div class="year">2025</div>
+      <div class="event">v0.1.0 ships. Merlin opens his eyes for the first time in sixteen years.</div>
+      <div class="year">2026</div>
+      <div class="event">v0.5 — voice, vision, extensions, setup wizard. He sounds like himself again.</div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="about-section" data-screen-label="How it works">
+    <h2><span class="num">03</span> How it works</h2>
+    <p>
+      Merlin is an Electron app. Standard desktop chrome, except the chrome is mostly
+      transparent and the contents are a wizard. The sprite engine is
+      <a href="https://github.com/clippyjs/clippy.js" target="_blank" rel="noopener">clippyjs</a> —
+      a wonderful piece of preservation that ports the original character animation
+      files to the browser. Anything that runs in clippyjs runs here, which means
+      you can drop in Clippy, Bonzi, Rocky, Genie, or your own custom sprite sheet.
+    </p>
+    <p>
+      The brain is whatever you point it at. The
+      <a href="https://sdk.vercel.ai/" target="_blank" rel="noopener">Vercel ai SDK</a>
+      handles the streaming and tool-use plumbing, so swapping between Anthropic,
+      Groq, OpenRouter, MiniMax, Ollama, and the self-hosted Hermes Agent is a
+      matter of changing one dropdown.
+    </p>
+
+    <div class="tech-grid">
+      <div class="tech-item"><span class="tech-dot"></span><div><div class="tech-name">Electron 33</div><div class="tech-role">Desktop shell</div></div></div>
+      <div class="tech-item"><span class="tech-dot"></span><div><div class="tech-name">React 18 + Vite</div><div class="tech-role">UI</div></div></div>
+      <div class="tech-item"><span class="tech-dot"></span><div><div class="tech-name">TypeScript</div><div class="tech-role">Everything</div></div></div>
+      <div class="tech-item"><span class="tech-dot"></span><div><div class="tech-name">clippyjs</div><div class="tech-role">Sprite engine</div></div></div>
+      <div class="tech-item"><span class="tech-dot"></span><div><div class="tech-name">Vercel ai SDK</div><div class="tech-role">LLM streaming</div></div></div>
+      <div class="tech-item"><span class="tech-dot"></span><div><div class="tech-name">ElevenLabs / Edge TTS</div><div class="tech-role">Voice out</div></div></div>
+      <div class="tech-item"><span class="tech-dot"></span><div><div class="tech-name">Whisper</div><div class="tech-role">Voice in</div></div></div>
+      <div class="tech-item"><span class="tech-dot"></span><div><div class="tech-name">electron-store</div><div class="tech-role">Settings persistence</div></div></div>
+    </div>
+  </section>
+
+  <!-- AUTHOR -->
+  <section class="about-section" data-screen-label="Author">
+    <h2><span class="num">04</span> Author</h2>
+    <div class="author-card">
+      <div class="avatar">G</div>
+      <div>
+        <p class="handle">therealgorgan</p>
+        <p class="meta">Built Merlin the Wizard because nobody else was going to. Solo project, open to contributors.</p>
+        <div class="links">
+          <a href="https://github.com/therealgorgan" target="_blank" rel="noopener">GitHub →</a>
+          <a href="https://github.com/therealgorgan/merlin-the-wizard/issues" target="_blank" rel="noopener">Open an issue →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LICENSE -->
+  <section class="about-section" data-screen-label="License">
+    <h2><span class="num">05</span> License &amp; credits</h2>
+    <div class="license-card">
+      <p><strong style="color:var(--gold);">MIT License</strong></p>
+      <p>Free to use, fork, modify, redistribute. Attribution appreciated but not required.</p>
+      <p style="margin-top:14px;">Microsoft Agent and the Merlin character are trademarks of Microsoft Corporation. This project is a community tribute and is not affiliated with, endorsed by, or sponsored by Microsoft.</p>
+      <p style="margin-top:14px;">See the <a href="https://github.com/therealgorgan/merlin-the-wizard/blob/main/LICENSE" target="_blank" rel="noopener">full license →</a></p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="about-section" data-screen-label="Final CTA" style="text-align:center;margin-top:80px;">
+    <h2 style="justify-content:center;font-size:34px;margin-bottom:24px;">
+      <span style="color:var(--gold);">✦</span> Go say hi to him.
+    </h2>
+    <div class="cta-row" style="justify-content:center;">
+      <a class="btn btn-primary" href="https://github.com/therealgorgan/merlin-the-wizard/releases/latest" target="_blank" rel="noopener">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download for Windows
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/therealgorgan/merlin-the-wizard" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============================== FOOTER ============================== -->
+<footer data-screen-label="Footer">
+  <div class="foot-inner">
+    <div>
+      <div class="foot-brand"><span style="color:var(--gold);">✦</span> Merlin the Wizard</div>
+      <p class="tag">A loving reanimation of Microsoft Agent. Bring your own brain.</p>
+      <span class="v-pill" style="font-size:11px;">v0.5.1 — May 2026</span>
+    </div>
+    <div>
+      <h4>Project</h4>
+      <ul>
+        <li><a href="https://github.com/therealgorgan/merlin-the-wizard" target="_blank" rel="noopener">Repository</a></li>
+        <li><a href="https://github.com/therealgorgan/merlin-the-wizard/releases" target="_blank" rel="noopener">Releases</a></li>
+        <li><a href="https://github.com/therealgorgan/merlin-the-wizard/issues" target="_blank" rel="noopener">Issues</a></li>
+        <li><a href="changelog.html">Changelog</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Docs</h4>
+      <ul>
+        <li><a href="index.html#quickstart">Quickstart</a></li>
+        <li><a href="index.html#brains">Brain setup</a></li>
+        <li><a href="screenshots.html">Screenshots</a></li>
+        <li><a href="about.html">About</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Credits</h4>
+      <ul>
+        <li>Built on <a href="https://www.electronjs.org/" target="_blank" rel="noopener">Electron</a></li>
+        <li>Sprite via <a href="https://github.com/clippyjs/clippy.js" target="_blank" rel="noopener">clippyjs</a></li>
+        <li>Voice by <a href="https://elevenlabs.io/" target="_blank" rel="noopener">ElevenLabs</a></li>
+        <li>LLMs via <a href="https://sdk.vercel.ai/" target="_blank" rel="noopener">ai SDK</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="legal">
+    <div>© 2026 therealgorgan · MIT License</div>
+    <div>Microsoft Agent and Merlin are trademarks of Microsoft. This is a community tribute.</div>
+  </div>
+</footer>
+
+</body>
+</html>
