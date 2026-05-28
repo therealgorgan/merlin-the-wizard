@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="0.8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Wand handle: purple, diagonal from star tip to lower-right -->
+  <line x1="6" y1="6" x2="28" y2="28" stroke="#3b1d6e" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="6" y1="6" x2="28" y2="28" stroke="#f6efe1" stroke-width="0.7" stroke-linecap="round" opacity="0.55"/>
+  <!-- Tip wrap (gold sleeve where the handle meets the star) -->
+  <circle cx="7" cy="7" r="2.2" fill="#f5c542" opacity="0.7"/>
+  <!-- Star at the tip, hotspot ~ (4,4) -->
+  <g filter="url(#glow)" transform="translate(4 4)">
+    <path d="M3 0 L3.7 2.3 L6 3 L3.7 3.7 L3 6 L2.3 3.7 L0 3 L2.3 2.3 Z" fill="#f5c542"/>
+  </g>
+  <!-- Tiny sparkle drifting off -->
+  <circle cx="12" cy="3" r="0.7" fill="#f5c542" opacity="0.8"/>
+  <circle cx="2" cy="11" r="0.6" fill="#f5c542" opacity="0.6"/>
+</svg>

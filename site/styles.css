@@ -28,6 +28,21 @@
 }
 
 * { box-sizing: border-box; }
+
+/* ---------- Magic-wand cursor ---------- */
+html, body {
+  cursor: url('cursors/wand.svg') 4 4, auto;
+}
+a, button, .btn, [role="button"], [onclick], label[for], summary,
+input[type="submit"], input[type="button"], input[type="reset"],
+.feature, .release-card, .step, .tech-item {
+  cursor: url('cursors/wand-pointer.svg') 4 4, pointer;
+}
+/* Text-entry surfaces keep the I-beam so caret position stays readable */
+input:not([type="submit"]):not([type="button"]):not([type="reset"]),
+textarea, [contenteditable="true"] {
+  cursor: text;
+}
 html, body { margin: 0; padding: 0; }
 
 body {

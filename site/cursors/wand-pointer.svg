@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <filter id="glow2" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Wand handle -->
+  <line x1="7" y1="7" x2="29" y2="29" stroke="#3b1d6e" stroke-width="2.8" stroke-linecap="round"/>
+  <line x1="7" y1="7" x2="29" y2="29" stroke="#f6efe1" stroke-width="0.9" stroke-linecap="round" opacity="0.6"/>
+  <circle cx="8" cy="8" r="2.6" fill="#f5c542" opacity="0.85"/>
+  <!-- Bigger sparkling star on hover, hotspot ~ (4,4) -->
+  <g filter="url(#glow2)" transform="translate(3 3)">
+    <path d="M4 0 L5 3 L8 4 L5 5 L4 8 L3 5 L0 4 L3 3 Z" fill="#f5c542"/>
+  </g>
+  <!-- Magic burst sparkles -->
+  <circle cx="14" cy="3" r="0.9" fill="#f5c542"/>
+  <circle cx="3" cy="14" r="0.9" fill="#f5c542"/>
+  <circle cx="11" cy="11" r="0.6" fill="#f6efe1" opacity="0.9"/>
+  <circle cx="2" cy="6" r="0.5" fill="#f6efe1" opacity="0.7"/>
+</svg>
