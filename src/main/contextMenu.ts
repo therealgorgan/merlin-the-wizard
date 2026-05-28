@@ -434,6 +434,32 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
     },
     { type: 'separator' },
     {
+      label: 'Check for Updates...',
+      click: async () => {
+        const { autoUpdater } = await import('electron-updater');
+        try {
+          const r = await autoUpdater.checkForUpdates();
+          const newer = r?.updateInfo?.version && r.updateInfo.version !== app.getVersion();
+          if (!newer) {
+            const { dialog } = await import('electron');
+            await dialog.showMessageBox({
+              type: 'info',
+              title: 'Merlin is up-to-date',
+              message: `You're running v${app.getVersion()} — the latest published release.`,
+            });
+          }
+        } catch (e) {
+          const { dialog } = await import('electron');
+          await dialog.showMessageBox({
+            type: 'warning',
+            title: 'Update check failed',
+            message: 'Could not reach GitHub Releases.',
+            detail: (e as Error).message,
+          });
+        }
+      },
+    },
+    {
       label: '☕ Support on Ko-fi...',
       click: () => void shell.openExternal('https://ko-fi.com/gorganslab'),
     },
@@ -462,7 +488,7 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
         else await setVisible();
       },
     },
-    { label: 'Hide Merlin', click: () => void setHidden() },
+    { label: 'Hide Merlin', click: () => void setHidden({ force: true }) },
     { label: 'Size', submenu: sizeSubmenu },
     {
       label: 'Mute Sound Effects',

@@ -865,12 +865,14 @@ let wasVisibleBeforeHide: { bubble: boolean; panel: boolean } = {
   panel: false,
 };
 
-export async function setHidden(): Promise<void> {
+export async function setHidden(opts: { force?: boolean } = {}): Promise<void> {
   clearSpeakingTimer();
   setIntent('hidden', 'hide');
-  // Also hide the chat surfaces (bubble / panel) unless the user is
-  // currently focused in one — losing their unsent text would be infuriating.
-  // Remember which surfaces were visible so setVisible() can restore them.
+  // Also hide the chat surfaces (bubble / panel). By default we leave a
+  // *focused* surface alone — losing unsent text would be infuriating, and
+  // LLM tool-call hides shouldn't trash typing. When the user explicitly
+  // hides via the tray icon/menu, pass { force: true } to hide everything
+  // regardless of focus state.
   const { getBubbleWindow, hideBubble } = await import('./windows/bubbleWindow');
   const { getChatPanelWindow, hideChatPanel } = await import('./windows/chatPanelWindow');
   const bubble = getBubbleWindow();
@@ -879,8 +881,8 @@ export async function setHidden(): Promise<void> {
     bubble: Boolean(bubble && bubble.isVisible()),
     panel: Boolean(panel && panel.isVisible()),
   };
-  if (bubble && bubble.isVisible() && !bubble.isFocused()) hideBubble();
-  if (panel && panel.isVisible() && !panel.isFocused()) hideChatPanel();
+  if (bubble && bubble.isVisible() && (opts.force || !bubble.isFocused())) hideBubble();
+  if (panel && panel.isVisible() && (opts.force || !panel.isFocused())) hideChatPanel();
   await hideMerlinWithAnimation();
 }
 

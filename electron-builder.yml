@@ -28,4 +28,8 @@ nsis:
   artifactName: Merlin-Setup.${ext}
 portable:
   artifactName: Merlin-Portable.${ext}
-publish: null
+publish:
+  provider: github
+  owner: therealgorgan
+  repo: merlin-the-wizard
+  releaseType: release

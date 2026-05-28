@@ -72,7 +72,7 @@ function buildTray(): void {
   tray.on('click', async () => {
     const w = getSpriteWindow();
     if (!w) await createSpriteWindow();
-    else if (w.isVisible()) await setHidden();
+    else if (w.isVisible()) await setHidden({ force: true });
     else await setVisible();
   });
 }
@@ -115,6 +115,10 @@ app.whenReady().then(async () => {
   await registerScreenshotHotkey();
   // Reconcile autostart flag with the OS.
   await syncAutoStartOnBoot();
+
+  // Wire electron-updater to GitHub Releases. No-op in dev (only fires when packaged).
+  const { startAutoUpdater } = await import('./updater');
+  startAutoUpdater();
 
   // If Hermes is the active provider, kick off a background profile discovery
   // so the tray "Hermes profile" submenu is hot from the first right-click.
