@@ -8,6 +8,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%2011-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![electron](https://img.shields.io/badge/electron-33-brightgreen)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/gorganslab)
 
 Merlin is the original Windows 98 Microsoft Agent sprite — wizard hat, robe of
 moons, animated bows — running natively on Windows 11 as a transparent
@@ -197,6 +198,15 @@ For non-trivial changes, open an issue first to discuss the shape.
 - **clippyjs** (LiquidFusion/Smore/various) — the sprite-frame animation runtime, bundled with jQuery 3.5.x. Pinned because clippyjs is unmaintained since ~2017 but works fine for its purpose.
 - **Microsoft** — the original Microsoft Agent characters (Merlin, Clippy, et al.) from the late 90s/early 2000s.
 - **Nous Research** — [Hermes Agent](https://github.com/nousresearch/hermes-agent), the optional self-hosted agent backend.
+
+---
+
+## Support
+
+Merlin is a solo project, free and MIT-licensed. If he made you smile (or
+saved you a click), tips help keep the wizard fed.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/gorganslab)
 
 ---
 

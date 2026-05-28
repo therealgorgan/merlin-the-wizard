@@ -1,4 +1,4 @@
-import { app, Menu, type MenuItemConstructorOptions } from 'electron';
+import { app, Menu, shell, type MenuItemConstructorOptions } from 'electron';
 import {
   createSpriteWindow,
   getSpriteWindow,
@@ -432,6 +432,11 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
         const { openSetupWizardWindow } = await import('./windows/setupWizardWindow');
         openSetupWizardWindow();
       },
+    },
+    { type: 'separator' },
+    {
+      label: '☕ Support on Ko-fi...',
+      click: () => void shell.openExternal('https://ko-fi.com/gorganslab'),
     },
     { label: 'Debug Panel', click: () => createDebugWindow() },
   ];
