@@ -143,6 +143,105 @@ img { max-width: 100%; display: block; }
 }
 .nav .gh-mini:hover { background: var(--parchment-dark); border-color: var(--ink); text-decoration: none; }
 
+/* Hamburger button — hidden on desktop, shown on narrow screens */
+.nav .nav-toggle {
+  display: none;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: var(--border-strong);
+  background: var(--paper);
+  border-radius: 10px;
+  cursor: pointer;
+  position: relative;
+  margin-left: 6px;
+}
+.nav .nav-toggle span {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  height: 2px;
+  background: var(--ink);
+  border-radius: 2px;
+  transition: transform .25s ease, opacity .15s ease, top .25s ease;
+}
+.nav .nav-toggle span:nth-child(1) { top: 12px; }
+.nav .nav-toggle span:nth-child(2) { top: 18px; }
+.nav .nav-toggle span:nth-child(3) { top: 24px; }
+.nav.open .nav-toggle span:nth-child(1) { top: 18px; transform: rotate(45deg); }
+.nav.open .nav-toggle span:nth-child(2) { opacity: 0; }
+.nav.open .nav-toggle span:nth-child(3) { top: 18px; transform: rotate(-45deg); }
+
+/* ---------- Mobile nav (drawer below nav bar) ---------- */
+@media (max-width: 760px) {
+  .nav { padding: 12px 18px; gap: 10px; flex-wrap: wrap; }
+  .nav .logo { font-size: 19px; gap: 8px; }
+  .nav .logo > span:not(.star) { font-size: 12px !important; }
+  .nav .nav-toggle { display: block; }
+  .nav .v-pill { font-size: 10px; padding: 3px 8px; }
+  .nav .gh-mini { font-size: 12px; padding: 5px 10px; }
+
+  /* Drawer: full-width, slides down from the nav bar */
+  .nav .pages {
+    order: 99;
+    flex-basis: 100%;
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    border-top: 1px solid transparent;
+    transition: max-height .3s ease, border-color .3s ease, padding .3s ease;
+  }
+  .nav.open .pages {
+    max-height: 360px;
+    border-top-color: rgba(26,21,48,.08);
+    padding: 8px 0 12px;
+  }
+  .nav .pages a {
+    padding: 12px 4px;
+    font-size: 16px;
+    border-bottom: 1px solid rgba(26,21,48,.04);
+  }
+  .nav .pages a::after { display: none; } /* drop the underline-wipe on mobile */
+  .nav .pages a:last-child { border-bottom: none; }
+}
+
+/* Very narrow phones — sacrifice the version pill, keep Star */
+@media (max-width: 400px) {
+  .nav .v-pill { display: none; }
+  .nav .gh-mini { font-size: 11px; padding: 4px 8px; }
+}
+
+/* ---------- Global mobile spacing ---------- */
+@media (max-width: 760px) {
+  .hero { padding: 32px 18px 50px; gap: 26px; }
+  .hero-title { font-size: 38px !important; line-height: 1.05 !important; }
+  .hero-sub { font-size: 15px; }
+  section { padding: 44px 18px; }
+  .cta-strip { padding: 44px 18px; }
+  .section-title { font-size: 26px !important; line-height: 1.15 !important; }
+  .section-lede { font-size: 14px; }
+  .page-header { padding: 50px 18px 30px !important; }
+  .page-header h1 { font-size: 36px !important; }
+  .about-wrap { padding: 0 18px !important; }
+  .about-section h2 { font-size: 22px !important; }
+  .changelog { padding: 0 18px !important; }
+  .release-head h2 { font-size: 20px !important; }
+  .release-card { padding: 18px !important; }
+  .btn { font-size: 14px; padding: 10px 18px; }
+  .cta-row { flex-wrap: wrap; gap: 10px; }
+  footer { padding: 36px 18px 24px !important; }
+  /* Brain table -> horizontal scroll instead of overflow */
+  .brain-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .brain-table { min-width: 560px; }
+  /* Step-shot images shrink */
+  .step .step-shot, .step .install-mock { height: 160px !important; }
+  /* Intro stats grid collapses */
+  .intro-stats { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
 /* ---------- Hero ---------- */
 .hero {
   position: relative;

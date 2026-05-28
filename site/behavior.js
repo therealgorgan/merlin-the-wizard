@@ -66,4 +66,21 @@
   });
 
   window.__merlinSetTrail = (on) => { trailEnabled = !!on; };
+
+  // ---- Mobile nav toggle (hamburger) ----
+  const nav = document.querySelector('.nav');
+  const toggle = nav && nav.querySelector('.nav-toggle');
+  const pagesEl = nav && nav.querySelector('.pages');
+  if (toggle && pagesEl) {
+    const setOpen = (open) => {
+      nav.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    };
+    toggle.addEventListener('click', () => setOpen(!nav.classList.contains('open')));
+    pagesEl.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => setOpen(false)));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
+    const mq = window.matchMedia('(min-width: 761px)');
+    mq.addEventListener('change', (e) => { if (e.matches) setOpen(false); });
+  }
 })();
