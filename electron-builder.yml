@@ -25,4 +25,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  artifactName: Merlin-Setup.${ext}
+portable:
+  artifactName: Merlin-Portable.${ext}
 publish: null
