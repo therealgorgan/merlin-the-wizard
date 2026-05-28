@@ -2,8 +2,6 @@ import { app, Menu, shell, type MenuItemConstructorOptions } from 'electron';
 import {
   createSpriteWindow,
   getSpriteWindow,
-  hideSprite,
-  showSprite,
   setZoom,
   getZoom,
   setMuteSounds,
@@ -23,6 +21,7 @@ import { openHistoryWindow } from './windows/historyWindow';
 import { forgetConversation } from './interaction';
 import { getMood, moodLabel } from './feelings';
 import { buildAnimationSubmenu } from './animationMenu';
+import { setHidden, setVisible } from './animationController';
 import { listTasks, completeTask, removeTask } from './tasks';
 import { currentProviderLabel } from './llm/providerRegistry';
 import {
@@ -460,10 +459,10 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
       label: 'Show Merlin',
       click: async () => {
         if (!getSpriteWindow()) await createSpriteWindow();
-        else showSprite();
+        else await setVisible();
       },
     },
-    { label: 'Hide Merlin', click: () => hideSprite() },
+    { label: 'Hide Merlin', click: () => void setHidden() },
     { label: 'Size', submenu: sizeSubmenu },
     {
       label: 'Mute Sound Effects',

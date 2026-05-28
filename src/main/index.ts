@@ -8,8 +8,6 @@ const envResult = loadProjectEnv(__dirname);
 
 import {
   createSpriteWindow,
-  showSprite,
-  hideSprite,
   getSpriteWindow,
   setOnZoomChanged,
 } from './windows/spriteWindow';
@@ -31,6 +29,8 @@ import {
   startProactiveBehaviors,
   reactToAppBlur,
   reactToAppFocus,
+  setHidden,
+  setVisible,
 } from './animationController';
 import { logger } from './logger';
 
@@ -72,8 +72,8 @@ function buildTray(): void {
   tray.on('click', async () => {
     const w = getSpriteWindow();
     if (!w) await createSpriteWindow();
-    else if (w.isVisible()) hideSprite();
-    else showSprite();
+    else if (w.isVisible()) await setHidden();
+    else await setVisible();
   });
 }
 
