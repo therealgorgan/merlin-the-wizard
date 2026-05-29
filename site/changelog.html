@@ -19,7 +19,7 @@
     <span class="star">✦</span> Merlin <span style="font-family:var(--sans);font-weight:400;font-size:14px;color:var(--ink-soft);">the Wizard</span>
   </a>
   <div class="spacer"></div>
-  <span class="v-pill">v0.6.1</span>
+  <span class="v-pill">v0.6.2</span>
   <a class="gh-mini" href="https://github.com/therealgorgan/merlin-the-wizard" target="_blank" rel="noopener">★ Star</a>
   <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-pages">
     <span></span><span></span><span></span>
@@ -51,13 +51,35 @@
 <!-- ============================== TIMELINE ============================== -->
 <section class="changelog" data-screen-label="Release timeline">
 
-  <article class="release latest" data-screen-label="v0.6.1">
+  <article class="release latest" data-screen-label="v0.6.2">
+    <div class="marker">0.6.2</div>
+    <div class="release-card">
+      <div class="release-head">
+        <h2>v0.6.2 — Merlin reappears</h2>
+        <span class="date">May 2026</span>
+        <span class="tag-pill latest">Latest</span>
+      </div>
+      <p class="summary">Critical hotfix: the wizard himself was missing from every installer. Merlin's sprite art was never bundled into the published builds, so the character body never rendered — the chat worked, but Merlin was invisible. Now he shows up.</p>
+      <ul class="notes">
+        <li><b>Fix:</b> the Microsoft Agent sprite packs are fetched at build time and were never included in the released builds — clippyjs requested the sprite map, got a 404, and drew nothing. The build pipeline now bundles the art before packaging.</li>
+        <li>This affected <em>every</em> release to date — v0.6.2 is the first published build the character actually appears in.</li>
+        <li>Already installed? Auto-update pulls this for you (NSIS install) — or grab it below.</li>
+      </ul>
+      <div class="download-row">
+        <a href="https://github.com/therealgorgan/merlin-the-wizard/releases/latest/download/Merlin-Setup.exe" target="_blank" rel="noopener">
+          ⬇ Download v0.6.2
+        </a>
+        <span class="commit">Windows · NSIS · ~92 MB</span>
+      </div>
+    </div>
+  </article>
+
+  <article class="release" data-screen-label="v0.6.1">
     <div class="marker">0.6.1</div>
     <div class="release-card">
       <div class="release-head">
         <h2>v0.6.1 — Auto-update + tray-hide focus bypass</h2>
         <span class="date">May 2026</span>
-        <span class="tag-pill latest">Latest</span>
       </div>
       <p class="summary">Merlin can now update himself. Drops <code>electron-updater</code> in, wired to GitHub Releases — installed copies will quietly pull future patches in the background and ask before installing.</p>
       <ul class="notes">
@@ -66,7 +88,7 @@
         <li><b>Fix:</b> hiding via tray now also clears a <em>focused</em> chat panel — the focus guard ("don't lose unsent text") was meant for LLM-driven hides, not explicit user requests</li>
       </ul>
       <div class="download-row">
-        <a href="https://github.com/therealgorgan/merlin-the-wizard/releases/latest/download/Merlin-Setup.exe" target="_blank" rel="noopener">
+        <a href="https://github.com/therealgorgan/merlin-the-wizard/releases/tag/v0.6.1" target="_blank" rel="noopener">
           ⬇ Download v0.6.1
         </a>
         <span class="commit">Windows · NSIS · ~80 MB</span>
@@ -80,7 +102,6 @@
       <div class="release-head">
         <h2>v0.6.0 — Ko-fi support + tray-hide polish</h2>
         <span class="date">May 2026</span>
-        <span class="tag-pill latest">Latest</span>
       </div>
       <p class="summary">First versioned release shipped from the new automated pipeline. Marketing site goes live, a tip jar appears in three places, and the tray "Hide Merlin" finally hides the whole assistant — not just the sprite.</p>
       <ul class="notes">
@@ -265,7 +286,7 @@
     <div>
       <div class="foot-brand"><span style="color:var(--gold);">✦</span> Merlin the Wizard</div>
       <p class="tag">A loving reanimation of Microsoft Agent. Bring your own brain.</p>
-      <span class="v-pill" style="font-size:11px;">v0.6.1 — May 2026</span>
+      <span class="v-pill" style="font-size:11px;">v0.6.2 — May 2026</span>
     </div>
     <div>
       <h4>Project</h4>
