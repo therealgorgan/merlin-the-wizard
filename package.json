@@ -1,6 +1,6 @@
 {
   "name": "merlin-the-wizard",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Windows 11 desktop companion that recreates the Microsoft Agent Merlin sprite as a modern LLM-backed assistant. Multi-provider (Groq, OpenRouter, Ollama, MiniMax, Hermes Agent), voice in/out, screen capture, web search, custom characters.",
   "main": "out/main/index.js",
   "author": "therealgorgan",
@@ -38,8 +38,8 @@
     "typecheck": "tsc -b",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
-    "dist": "electron-vite build && electron-builder",
-    "dist:portable": "electron-vite build && electron-builder --config.win.target=portable",
+    "dist": "npm run assets && electron-vite build && electron-builder",
+    "dist:portable": "npm run assets && electron-vite build && electron-builder --config.win.target=portable",
     "assets": "node scripts/prepare-merlin-assets.mjs",
     "postinstall": "electron-builder install-app-deps"
   },

@@ -46,6 +46,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Fetch Merlin agent assets
+        run: npm run assets
+
       - name: Build with electron-builder
         run: npm run dist
         env:
