@@ -13,6 +13,33 @@ Nothing yet.
 
 ---
 
+## [0.6.4] — 2026-05-29
+
+Auto-update, rebuilt. Drops `electron-updater` for a simpler GitHub-Releases
+updater that **opens the installer for you to confirm** — so it works on
+unsigned builds, where the old silent install was being blocked by Windows
+SmartScreen with no UI.
+
+### Changed
+
+- **Auto-update no longer uses electron-updater.** New self-rolled updater
+  (`src/main/updater.ts`, modelled on the Close-Apps-On-Idle approach):
+  checks the GitHub Releases API for a newer tag than the running version,
+  downloads `Merlin-Setup.exe`, then launches the **interactive** NSIS
+  installer and quits. Because the installer UI is visible, the user can
+  click through Windows SmartScreen's "More info → Run anyway" — the silent
+  `quitAndInstall` electron-updater used was blocked with no UI on this
+  unsigned build, which is why updates appeared to "fail". Background check
+  10 s after launch + every 4 h; the tray "Check for Updates…" runs the same
+  flow and reports up-to-date / network errors explicitly.
+
+### Removed
+
+- `electron-updater` dependency. (The release still publishes `latest.yml`;
+  it's simply no longer consumed.)
+
+---
+
 ## [0.6.3] — 2026-05-29
 
 Hotfix for the tray **"Check for Updates…"** button.
@@ -797,7 +824,8 @@ to <https://github.com/therealgorgan/merlin-the-wizard>.
 - `docs/integrating-hermes.md` (scrubbed of any private IPs/tokens)
 - Public GitHub repo at <https://github.com/therealgorgan/merlin-the-wizard>
 
-[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.1...v0.6.2
 [0.4.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.1...v0.4.0

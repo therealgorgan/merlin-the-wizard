@@ -116,7 +116,7 @@ app.whenReady().then(async () => {
   // Reconcile autostart flag with the OS.
   await syncAutoStartOnBoot();
 
-  // Wire electron-updater to GitHub Releases. No-op in dev (only fires when packaged).
+  // Wire the GitHub-Releases updater. No-op in dev (only fires when packaged).
   const { startAutoUpdater } = await import('./updater');
   startAutoUpdater();
 
