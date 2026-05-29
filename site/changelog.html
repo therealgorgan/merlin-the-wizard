@@ -19,7 +19,7 @@
     <span class="star">✦</span> Merlin <span style="font-family:var(--sans);font-weight:400;font-size:14px;color:var(--ink-soft);">the Wizard</span>
   </a>
   <div class="spacer"></div>
-  <span class="v-pill">v0.6.2</span>
+  <span class="v-pill">v0.6.3</span>
   <a class="gh-mini" href="https://github.com/therealgorgan/merlin-the-wizard" target="_blank" rel="noopener">★ Star</a>
   <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-pages">
     <span></span><span></span><span></span>
@@ -51,13 +51,34 @@
 <!-- ============================== TIMELINE ============================== -->
 <section class="changelog" data-screen-label="Release timeline">
 
-  <article class="release latest" data-screen-label="v0.6.2">
+  <article class="release latest" data-screen-label="v0.6.3">
+    <div class="marker">0.6.3</div>
+    <div class="release-card">
+      <div class="release-head">
+        <h2>v0.6.3 — Update button fix</h2>
+        <span class="date">May 2026</span>
+        <span class="tag-pill latest">Latest</span>
+      </div>
+      <p class="summary">Small hotfix: the tray "Check for Updates…" button errored out with "Cannot read properties of undefined." Background auto-update was never affected — only the manual button. Now fixed.</p>
+      <ul class="notes">
+        <li><b>Fix:</b> the manual update check imported the updater the wrong way for the bundled build and got an empty reference. It now reuses the same working updater the background loop uses, and tells you whether an update is downloading, you're up to date, or you're running from source.</li>
+        <li>Background auto-update (checks on launch + every 4 hours) worked all along — if you're on v0.6.1/v0.6.2, just launch Merlin and wait a few seconds for the update prompt.</li>
+      </ul>
+      <div class="download-row">
+        <a href="https://github.com/therealgorgan/merlin-the-wizard/releases/latest/download/Merlin-Setup.exe" target="_blank" rel="noopener">
+          ⬇ Download v0.6.3
+        </a>
+        <span class="commit">Windows · NSIS · ~92 MB</span>
+      </div>
+    </div>
+  </article>
+
+  <article class="release" data-screen-label="v0.6.2">
     <div class="marker">0.6.2</div>
     <div class="release-card">
       <div class="release-head">
         <h2>v0.6.2 — Merlin reappears</h2>
         <span class="date">May 2026</span>
-        <span class="tag-pill latest">Latest</span>
       </div>
       <p class="summary">Critical hotfix: the wizard himself was missing from every installer. Merlin's sprite art was never bundled into the published builds, so the character body never rendered — the chat worked, but Merlin was invisible. Now he shows up.</p>
       <ul class="notes">
@@ -66,7 +87,7 @@
         <li>Already installed? Auto-update pulls this for you (NSIS install) — or grab it below.</li>
       </ul>
       <div class="download-row">
-        <a href="https://github.com/therealgorgan/merlin-the-wizard/releases/latest/download/Merlin-Setup.exe" target="_blank" rel="noopener">
+        <a href="https://github.com/therealgorgan/merlin-the-wizard/releases/tag/v0.6.2" target="_blank" rel="noopener">
           ⬇ Download v0.6.2
         </a>
         <span class="commit">Windows · NSIS · ~92 MB</span>
@@ -286,7 +307,7 @@
     <div>
       <div class="foot-brand"><span style="color:var(--gold);">✦</span> Merlin the Wizard</div>
       <p class="tag">A loving reanimation of Microsoft Agent. Bring your own brain.</p>
-      <span class="v-pill" style="font-size:11px;">v0.6.2 — May 2026</span>
+      <span class="v-pill" style="font-size:11px;">v0.6.3 — May 2026</span>
     </div>
     <div>
       <h4>Project</h4>

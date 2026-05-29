@@ -13,6 +13,26 @@ Nothing yet.
 
 ---
 
+## [0.6.3] — 2026-05-29
+
+Hotfix for the tray **"Check for Updates…"** button.
+
+### Fixed
+
+- **Tray "Check for Updates…" threw `Cannot read properties of undefined
+  (reading 'checkForUpdates')`.** The handler did
+  `const { autoUpdater } = await import('electron-updater')`; in the bundled
+  output that compiles to a native dynamic `import()` of a CommonJS module,
+  whose namespace exposes `autoUpdater` only as a lazy getter the module
+  lexer can't see — so the destructured binding was `undefined`. The
+  background auto-updater was never affected (it uses a static `import`,
+  which compiles to a direct `require('electron-updater').autoUpdater`). The
+  manual check now routes through a new `checkForUpdatesNow()` helper in
+  `updater.ts` that reuses that working reference and reports
+  update-available / up-to-date / dev-disabled explicitly.
+
+---
+
 ## [0.6.2] — 2026-05-28
 
 Critical packaging hotfix. **The character sprite was missing from every
@@ -777,7 +797,8 @@ to <https://github.com/therealgorgan/merlin-the-wizard>.
 - `docs/integrating-hermes.md` (scrubbed of any private IPs/tokens)
 - Public GitHub repo at <https://github.com/therealgorgan/merlin-the-wizard>
 
-[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.6.1...v0.6.2
 [0.4.0]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/therealgorgan/merlin-the-wizard/compare/v0.3.0...v0.3.1

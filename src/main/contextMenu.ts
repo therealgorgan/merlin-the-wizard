@@ -436,12 +436,24 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
     {
       label: 'Check for Updates...',
       click: async () => {
-        const { autoUpdater } = await import('electron-updater');
+        const { dialog } = await import('electron');
         try {
-          const r = await autoUpdater.checkForUpdates();
-          const newer = r?.updateInfo?.version && r.updateInfo.version !== app.getVersion();
-          if (!newer) {
-            const { dialog } = await import('electron');
+          const { checkForUpdatesNow } = await import('./updater');
+          const res = await checkForUpdatesNow();
+          if (res.status === 'update-available') {
+            await dialog.showMessageBox({
+              type: 'info',
+              title: 'Update available',
+              message: `Merlin v${res.version} is downloading now.`,
+              detail: "You'll be prompted to install it once the download finishes.",
+            });
+          } else if (res.status === 'disabled') {
+            await dialog.showMessageBox({
+              type: 'info',
+              title: 'Updates run in the installed app',
+              message: 'Auto-update is only active in the packaged build, not when running from source.',
+            });
+          } else {
             await dialog.showMessageBox({
               type: 'info',
               title: 'Merlin is up-to-date',
@@ -449,7 +461,6 @@ export async function buildMerlinMenu(actions: MerlinMenuActions): Promise<Menu>
             });
           }
         } catch (e) {
-          const { dialog } = await import('electron');
           await dialog.showMessageBox({
             type: 'warning',
             title: 'Update check failed',

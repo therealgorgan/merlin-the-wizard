@@ -66,3 +66,30 @@ export function startAutoUpdater(): void {
     4 * 60 * 60 * 1000,
   );
 }
+
+export type ManualCheckResult =
+  | { status: 'update-available'; version: string }
+  | { status: 'up-to-date' }
+  | { status: 'disabled' };
+
+/**
+ * Manual "Check for Updates" entry point for the tray menu. Routes through
+ * the same statically-imported `autoUpdater` the background loop uses, which
+ * compiles to a direct `require('electron-updater').autoUpdater` property read.
+ *
+ * Do NOT `await import('electron-updater')` from the caller: in the bundled
+ * output that becomes a native dynamic `import()` of a CJS module, whose
+ * namespace exposes `autoUpdater` only as a lazy getter the module lexer
+ * can't see — so `const { autoUpdater } = await import(...)` is `undefined`,
+ * and `autoUpdater.checkForUpdates()` threw
+ * "Cannot read properties of undefined (reading 'checkForUpdates')".
+ */
+export async function checkForUpdatesNow(): Promise<ManualCheckResult> {
+  if (!app.isPackaged) return { status: 'disabled' };
+  const r = await autoUpdater.checkForUpdates();
+  const version = r?.updateInfo?.version;
+  if (version && version !== app.getVersion()) {
+    return { status: 'update-available', version };
+  }
+  return { status: 'up-to-date' };
+}
